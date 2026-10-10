@@ -9,6 +9,8 @@
 //! - `catalog`：上游 `/models` 抓取、解析與目錄快取
 //! - `crud`：可用模型 CRUD、思考等級白名單與 `resolve_actual`
 //! - `codex_catalog`：Codex 模型目錄生成
+//! - `reasoning`：實測／學習到的「這個模型的這個思考強度上游收不收」記憶
+//! - `probe`：主動偵測思考強度（直打上游，逐一實測）
 //! - `tests`：單元測試（僅測試組建）
 //!
 //! `crate::models::X` 這個路徑對所有對外名稱都不變（`REASONINGS`、
@@ -20,6 +22,9 @@
 mod catalog;
 mod codex_catalog;
 mod crud;
+mod probe;
+mod protocol_probe;
+mod reasoning;
 
 #[cfg(test)]
 mod tests;
@@ -27,3 +32,6 @@ mod tests;
 pub use catalog::*;
 pub(crate) use codex_catalog::*;
 pub use crud::*;
+pub use probe::*;
+pub use protocol_probe::*;
+pub(crate) use reasoning::*;

@@ -47,7 +47,11 @@ pub(crate) use settings::*;
 /// `settings` key-value 表裡，所以不需要 DROP TABLE，只需要把只服務它們的
 /// 17 個 key 清掉（見 [`open::purge_removed_feature_settings`]`）。
 /// 當中 `cloud_password` 是**明文的 WebDAV 密碼**，留著就是留著憑證在磁碟上。
-pub const SCHEMA_VERSION: i32 = 15;
+/// v16（2026-10-08）：新增 provider_model_reasoning —— 實測／學習到的
+/// 「這個模型的這個思考強度上游收不收」。純新增表，無需 ALTER。
+/// 動機：上游不公開支援哪些 reasoning_effort，送錯只回泛用的 400
+/// `Invalid request parameters`，所以只能實測並記下來。
+pub const SCHEMA_VERSION: i32 = 16;
 
 /// 網關預設連接埠（C 方案：可在設定中修改；歷史預設 15721 與 cc-switch 衝突）。
 pub const DEFAULT_GATEWAY_PORT: u16 = 15722;

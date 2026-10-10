@@ -20,6 +20,9 @@ import type {
   ProviderPricing,
   ProviderPricingInput,
   ProviderStat,
+  ProtocolProbeReport,
+  ReasoningFact,
+  ReasoningProbeReport,
   WindowBehavior,
   AppearanceState,
   SubscriptionFees,
@@ -295,4 +298,22 @@ export const platformApi = {
   modelUpdate: (id: number, input: UsableModelInput): Promise<void> =>
     invoke("model_update", { id, input }),
   modelDelete: (id: number): Promise<void> => invoke("model_delete", { id }),
+  /** 逐一實測這個模型支援哪些思考強度（**會對上游發真正的請求**）。 */
+  modelProbeReasoning: (
+    providerId: number,
+    modelId: number,
+  ): Promise<ReasoningProbeReport> =>
+    invoke("model_probe_reasoning", { providerId, modelId }),
+  /** 實測這個模型走哪一種協議（chat／responses／anthropic）。 */
+  modelProbeProtocol: (
+    providerId: number,
+    modelId: number,
+  ): Promise<ProtocolProbeReport> =>
+    invoke("model_probe_protocol", { providerId, modelId }),
+  /** 這個模型目前的思考強度記憶（UI 顯示「上次偵測」用）。 */
+  modelReasoningFacts: (
+    providerId: number,
+    model: string,
+  ): Promise<ReasoningFact[]> =>
+    invoke("model_reasoning_facts", { providerId, model }),
 };

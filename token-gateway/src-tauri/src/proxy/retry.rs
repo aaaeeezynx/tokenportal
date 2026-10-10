@@ -138,6 +138,42 @@ pub(super) async fn send_with_strip_retry(
     }
     let mut retried: Option<reqwest::Response> = None;
     let mut applied: Vec<String> = vec![];
+    // ⓪ 先處理「這個推理簽章不是我發的」：`store: false` 的請求我們會**保留**
+    //    `encrypted_content`（那是上游重播推理的唯一依據），但若這個來源真的
+    //    拒收簽章，就得剝掉重試並**記住這個來源要剝**，下次連無狀態請求也剝。
+    //    見 `strip_for_upstream` 的長註解與 `strip::is_stateless`。
+    if is_encrypted_content_rejected(&upstream_full) {
+        if let Some(nb) = strip_encrypted_content(&body) {
+            let mem = open_conn(&rc.req.ctx.db_path).ok();
+            match mem
+                .as_ref()
+                .map(|c| trace::remember_stripped(c, provider_id, ENCRYPTED_CONTENT_FIELD))
+            {
+                Some(Err(e)) => eprintln!("gateway: 記錄拒收簽章失敗: {e}"),
+                None => eprintln!("gateway: 記錄拒收簽章失敗：資料庫不可用"),
+                Some(Ok(())) => {}
+            }
+            drop(mem);
+            let rec = rc
+                .trace(
+                    400,
+                    vec![ENCRYPTED_CONTENT_FIELD.to_string()],
+                    "上游 400：拒收推理簽章，已剝離 encrypted_content 並重試",
+                )
+                .with_body(&body)
+                .with_upstream_error(&upstream_full);
+            trace::log_to(&rc.req.ctx.db_path, &rec);
+            match up.send(nb).await {
+                Ok(r) => return SendOutcome::Ok(r),
+                Err(e) => {
+                    return SendOutcome::Reject {
+                        resp: Box::new(rc.connect_failed(&e)),
+                        retryable: true,
+                    }
+                }
+            }
+        }
+    }
     let fields = parse_unknown_fields(&String::from_utf8_lossy(&eb));
     if !fields.is_empty() {
         let mut nb = body.clone();
@@ -202,6 +238,17 @@ pub(super) async fn send_with_strip_retry(
             }
         }
         None => {
+            // 在宣告「相容策略失效」之前，先試一個很常見的原因：**思考強度不支援**。
+            //
+            // 上游對不支援的 `reasoning_effort` 回的是泛用的
+            // `400 Invalid request parameters`，訊息裡沒有欄位名，所以上面那條
+            // 「剝離未知欄位」永遠學不到東西（2026-10-08 的兩個 MiMo 就是這樣）。
+            // 但**我們知道自己送了什麼** —— 拿掉它重試一次，並把「這個模型不收
+            // 這個強度」記進 learn 表。零額外請求：真的踩到才會發生。
+            if let Some(o) = retry_without_reasoning(rc, provider_id, up, &body, &upstream_full).await
+            {
+                return o;
+            }
             // 無法從錯誤訊息解析出欄位名 → 相容策略失效，必須留痕才能改進
             let note = if applied.is_empty() {
                 "上游 400 且無法解析出拒收欄位名（相容策略失效）"
@@ -225,5 +272,87 @@ pub(super) async fn send_with_strip_retry(
                 retryable: false,
             }
         }
+    }
+}
+
+/// 從**送出**（已翻譯／已剝離）的 body 取出 `(model, reasoning_effort)`。
+///
+/// 兩個都取 `model` 欄位與 `reasoning_effort`：前者是記憶的鍵（實測記憶也是
+/// 用上游實際模型名當鍵），後者是要拿掉並記下來的值。
+fn sent_reasoning(body: &[u8]) -> Option<(String, String)> {
+    let v: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let level = v.get("reasoning_effort")?.as_str()?.trim().to_lowercase();
+    let model = v.get("model")?.as_str()?.trim().to_string();
+    if model.is_empty() || level.is_empty() {
+        return None;
+    }
+    Some((model, level))
+}
+
+/// 400 且我們送了 `reasoning_effort` → 記下「這個模型不收這個強度」並拿掉重試。
+///
+/// 回傳 `Some(outcome)` 表示已經重試過（不論成敗）；`None` 表示這條路不適用，
+/// 呼叫端照原本的流程回報。
+async fn retry_without_reasoning(
+    rc: &RetryCtx<'_>,
+    provider_id: i64,
+    up: &Upstream<'_>,
+    body: &[u8],
+    upstream_full: &str,
+) -> Option<SendOutcome> {
+    let (model, level) = sent_reasoning(body)?;
+    let mut v: serde_json::Value = serde_json::from_slice(body).ok()?;
+    v.as_object_mut()?.remove("reasoning_effort");
+    let nb = serde_json::to_vec(&v).ok()?;
+
+    // 短命連線寫記憶（理由同上面：`&Connection` 跨 await 會讓 future 變 !Send）
+    match open_conn(&rc.req.ctx.db_path) {
+        Ok(conn) => {
+            if let Err(e) = crate::models::record(
+                &conn,
+                provider_id,
+                &model,
+                &level,
+                false,
+                "learned",
+                crate::fsutil::now_ms(),
+            ) {
+                eprintln!("gateway: 記錄思考強度失敗: {e}");
+            }
+        }
+        Err(e) => eprintln!("gateway: 記錄思考強度失敗（資料庫不可用）: {e}"),
+    }
+
+    let rec = rc
+        .trace(
+            400,
+            vec!["reasoning_effort".to_string()],
+            "上游 400：疑似思考強度不支援，已移除 reasoning_effort 重試",
+        )
+        .with_body(body)
+        .with_upstream_error(upstream_full);
+    trace::log_to(&rc.req.ctx.db_path, &rec);
+
+    match up.send(nb).await {
+        Ok(r) if !r.status().is_client_error() => Some(SendOutcome::Ok(r)),
+        Ok(r) => {
+            let st = r.status();
+            let eb = r.bytes().await.unwrap_or_default().to_vec();
+            Some(SendOutcome::Reject {
+                resp: Box::new(reject(
+                    rc.req.ctx,
+                    rc.req.started,
+                    rc.req.app,
+                    rc.req.model_raw,
+                    st,
+                    upstream_err_text(&eb),
+                )),
+                retryable: false,
+            })
+        }
+        Err(e) => Some(SendOutcome::Reject {
+            resp: Box::new(rc.connect_failed(&e)),
+            retryable: true,
+        }),
     }
 }

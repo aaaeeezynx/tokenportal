@@ -126,13 +126,67 @@ pub(super) fn strip_unsupported_tools(body: &[u8]) -> Option<Vec<u8>> {
     }
     serde_json::to_vec(&v).ok()
 }
+/// 學到「這個來源拒收推理簽章」時，記在 `provider_stripped_fields` 用的欄位名。
+///
+/// 它不是一般的頂層欄位（`encrypted_content` 嵌在 reasoning item 裡），
+/// 所以 `strip_for_upstream` 對它**特別處理**：改用 `strip_encrypted_content`
+/// 遞迴移除，而不是 `strip_json_field` 只拔頂層。
+pub(super) const ENCRYPTED_CONTENT_FIELD: &str = "encrypted_content";
+
+/// 這個請求是不是「無狀態」的（`store: false`）。
+///
+/// **為什麼要判斷它**：`store: false` 時上游不保存回應，推理的重播完全依賴
+/// `encrypted_content`；此時把它剝掉，上游就只剩一個查不到的 ID，回
+/// `Referenced reasoning item 'rs_…' was not found or has expired.`
+/// （2026-10-10 的實例：Codex 的 `disable_response_storage = true`）。
+///
+/// 用位元組掃描而不是完整 JSON parse：這個判斷在每個請求的熱路徑上，
+/// 而且只需要找一個頂層布林值。容忍 `"store":false` 與 `"store": false`。
+pub(super) fn is_stateless(body: &[u8]) -> bool {
+    const KEY: &[u8] = b"\"store\"";
+    let mut i = 0usize;
+    while let Some(pos) = body[i..]
+        .windows(KEY.len())
+        .position(|w| w == KEY)
+    {
+        let mut j = i + pos + KEY.len();
+        // 跳過空白 → 期待 ':' → 再跳空白 → 期待 false
+        while j < body.len() && body[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        if j >= body.len() || body[j] != b':' {
+            i = j;
+            continue;
+        }
+        j += 1;
+        while j < body.len() && body[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        if body[j..].starts_with(b"false") {
+            return true;
+        }
+        i = j;
+    }
+    false
+}
+
+/// 上游錯誤訊息是不是「這個推理簽章不是我發的」。
+///
+/// OpenAI 系的講法是 `reasoning \`encrypted_content\` was not issued to this
+/// caller`；只認這個片語，避免把別種 400 誤判成要剝簽章。
+pub(super) fn is_encrypted_content_rejected(msg: &str) -> bool {
+    msg.contains("was not issued to this caller")
+}
+
 /// 遞迴移除所有 `encrypted_content` 欄位（含 reasoning item 內）。
 ///
 /// 目的：Codex 在 ChatGPT 授權模式下產生的推理簽章只對 OpenAI 本身有效，
 /// 送到任何第三方 responses 端點都會被 400 拒收：
 /// `reasoning \`encrypted_content\` was not issued to this caller`。
 ///
-/// 只在**直通**路徑需要（兩條翻譯路徑都已是白名單重建 body，天然不含此欄位）。
+/// **呼叫端要注意時機**：`store: false` 的請求不能剝（那會讓上游無法重播
+/// 推理），所以 `strip_for_upstream` 會先問 [`is_stateless`]。
+/// 兩條翻譯路徑都已是白名單重建 body，天然不含此欄位。
 /// 回傳 `None` 表示未命中 —— 原文一字不動。
 pub(super) fn strip_encrypted_content(body: &[u8]) -> Option<Vec<u8>> {
     // 位元組快掃短路：絕大多數請求不含此欄位，避免每次多一次完整 JSON parse。

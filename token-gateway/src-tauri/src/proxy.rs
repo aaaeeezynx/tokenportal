@@ -82,8 +82,9 @@ use {
         relay_sse, responses_line_events, sse_response, AnthropicRelay, ResponsesRelay, StreamLog,
     },
     strip::{
-        parse_body_json, parse_unknown_fields, sanitize_passthrough_chat_body,
-        strip_encrypted_content, strip_json_field, strip_unsupported_tools, upstream_err_text,
+        is_encrypted_content_rejected, is_stateless, parse_body_json, parse_unknown_fields,
+        sanitize_passthrough_chat_body, strip_encrypted_content, strip_json_field,
+        strip_unsupported_tools, upstream_err_text, ENCRYPTED_CONTENT_FIELD,
     },
     util::{
         bearer, infer_app, is_hop_header, is_missing_endpoint, join_upstream, model_from_path,
@@ -229,7 +230,11 @@ async fn proxy_handler(State(ctx): State<ProxyCtx>, req: axum::http::Request<Bod
     // 5xx（逾時／上游故障）比「換協議之後撞到的 404」有訊息量得多 ——
     // 舊版把後者當成功回給客戶端，使用者只看到 `404 page not found`。
     let mut fallback: Option<(reqwest::Response, Prepared, bool)> = None;
+    // 最後一個真的試過的來源：候選全滅時要查「這個模型實測走哪個協議」，
+    // 得知道是問哪一個來源（換手會改 `authed.provider_id`，所以另外記）。
+    let mut last_pid = authed.provider_id;
     for (i, at) in attempts.iter().enumerate() {
+        last_pid = at.provider_id;
         if at.provider_id != authed.provider_id {
             match others.iter().find(|p| p.id == at.provider_id) {
                 Some(p) => {
@@ -367,8 +372,7 @@ async fn proxy_handler(State(ctx): State<ProxyCtx>, req: axum::http::Request<Bod
             }
         }
     }
-    let (upstream, prep, translated) = match success.or(fallback) {
-        Some(v) => v,
+    let (upstream, prep, translated) = match success.or(fallback) {        Some(v) => v,
         None => {
             return match last_reject {
                 Some(r) => *r,
@@ -378,9 +382,12 @@ async fn proxy_handler(State(ctx): State<ProxyCtx>, req: axum::http::Request<Bod
                     &app,
                     &model_raw,
                     StatusCode::BAD_REQUEST,
-                    format!(
-                        "模型 {model_raw} 在來源的所有協議下都不被接受（試過 {total} 個候選）：\
-                         上游回報此模型不支援這些協議，請換模型或換來源"
+                    // 短命連線查「實測到的協議」，訊息才講得出真正的原因
+                    crate::models::protocol_mismatch_message(
+                        open_conn(&ctx.db_path).ok().as_ref(),
+                        last_pid,
+                        &model_raw,
+                        total,
                     ),
                 ),
             };

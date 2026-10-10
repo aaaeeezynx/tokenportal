@@ -28,7 +28,7 @@ fn responses_request_mapping() {
         }"#,
     )
     .unwrap();
-    let o = responses_to_openai(&req, "actual-glm");
+    let o = responses_to_openai(&req, "actual-glm", &[]);
     assert_eq!(o["model"], "actual-glm");
     let msgs = o["messages"].as_array().unwrap();
     assert_eq!(msgs[0]["role"], "system");
@@ -58,7 +58,7 @@ fn responses_input_string_and_choice_object() {
                 "tool_choice": {"type": "function", "name": "bash"}}"#,
     )
     .unwrap();
-    let o = responses_to_openai(&req, "m");
+    let o = responses_to_openai(&req, "m", &[]);
     assert_eq!(o["messages"][0]["role"], "user");
     assert_eq!(o["messages"][0]["content"], "plain");
     assert_eq!(o["max_tokens"], 8);
@@ -123,7 +123,7 @@ fn responses_parallel_calls_merged() {
             ]}"#,
     )
     .unwrap();
-    let o = responses_to_openai(&req, "m");
+    let o = responses_to_openai(&req, "m", &[]);
     let msgs = o["messages"].as_array().unwrap();
     assert_eq!(msgs.len(), 5, "應為 user+assistant+tool*3");
     assert_eq!(msgs[1]["role"], "assistant");
@@ -146,7 +146,7 @@ fn responses_interleaved_calls_stay_paired() {
             ]}"#,
     )
     .unwrap();
-    let o = responses_to_openai(&req, "m");
+    let o = responses_to_openai(&req, "m", &[]);
     let msgs = o["messages"].as_array().unwrap();
     assert_eq!(msgs.len(), 4);
     assert_eq!(msgs[0]["tool_calls"][0]["id"], "a");
@@ -165,7 +165,7 @@ fn responses_orphan_function_call_gets_placeholder() {
             ]}"#,
     )
     .unwrap();
-    let o = responses_to_openai(&req, "m");
+    let o = responses_to_openai(&req, "m", &[]);
     let msgs = o["messages"].as_array().unwrap();
     assert_eq!(msgs.len(), 3);
     assert_eq!(msgs[1]["tool_calls"][0]["id"], "c9");
@@ -202,7 +202,7 @@ fn responses_custom_tool_names_extracted() {
 
 #[test]
 fn responses_custom_tool_functionalized() {
-    let o = responses_to_openai(&custom_req(), "m");
+    let o = responses_to_openai(&custom_req(), "m", &[]);
     let tools = o["tools"].as_array().unwrap();
     assert_eq!(tools.len(), 2, "function + custom 都要送出");
     let ap = tools
@@ -242,7 +242,7 @@ fn responses_to_openai_empty_tool_output_filled() {
             ]}"#,
     )
     .unwrap();
-    let out = responses_to_openai(&req, "m");
+    let out = responses_to_openai(&req, "m", &[]);
     let msgs = out["messages"].as_array().unwrap();
     assert_eq!(msgs.len(), 4);
     assert!(!msgs[1]["content"].as_str().unwrap_or("").is_empty());
@@ -251,14 +251,35 @@ fn responses_to_openai_empty_tool_output_filled() {
 
 #[test]
 fn reasoning_effort_mapping_filters_unsupported() {
-    let req: Value =
-        serde_json::from_str(r#"{"model": "m", "reasoning": {"effort": "medium"}}"#).unwrap();
-    assert_eq!(responses_to_openai(&req, "m")["reasoning_effort"], "medium");
-    let req: Value =
-        serde_json::from_str(r#"{"model": "m", "reasoning": {"effort": "low"}}"#).unwrap();
-    assert!(responses_to_openai(&req, "m").get("reasoning_effort").is_none());
-    let req: Value = serde_json::from_str(r#"{"model": "m"}"#).unwrap();
-    assert!(responses_to_openai(&req, "m").get("reasoning_effort").is_none());
+    // 白名單由呼叫端決定（models::allowed_efforts）。
+    // 舊版這裡是硬編碼 `medium|high|xhigh|max`，方向剛好反了 ——
+    // 轉發唯二會 400 的檔位、丟掉其餘全部（2026-10-08 的真實故障）。
+    let conv = |effort: &str, allowed: &[&str]| -> Value {
+        let req: Value =
+            serde_json::from_str(&format!(r#"{{"model":"m","reasoning":{{"effort":"{effort}"}}}}"#))
+                .unwrap();
+        let allowed: Vec<String> = allowed.iter().map(|s| s.to_string()).collect();
+        responses_to_openai(&req, "m", &allowed)
+    };
+
+    // 在允許清單裡 → 轉發
+    assert_eq!(conv("medium", &["low", "medium", "high"])["reasoning_effort"], "medium");
+    // ★ 迴歸：xhigh／max 只有在**明確被允許**時才轉發；
+    //    預設（實測支援集合）不含它們，所以送不出去
+    assert!(conv("xhigh", &["low", "medium", "high"]).get("reasoning_effort").is_none());
+    assert!(conv("max", &["low", "medium", "high"]).get("reasoning_effort").is_none());
+    // 舊版永遠丟掉 low／ultra／persistent；現在只要被允許就會轉發
+    assert_eq!(conv("low", &["low", "medium"]).get("reasoning_effort").unwrap(), "low");
+    assert_eq!(conv("persistent", &["persistent"]).get("reasoning_effort").unwrap(), "persistent");
+    // 允許清單是空的 → 一律不指定，讓上游用自己的預設
+    assert!(conv("medium", &[]).get("reasoning_effort").is_none());
+    // 大小寫不敏感
+    assert_eq!(conv("HIGH", &["high"])["reasoning_effort"], "high");
+    // 請求根本沒帶 reasoning → 不該無中生有
+    let bare: Value = serde_json::from_str(r#"{"model": "m"}"#).unwrap();
+    assert!(responses_to_openai(&bare, "m", &["medium".into()])
+        .get("reasoning_effort")
+        .is_none());
 }
 
 // ------------------------------------------------- reasoning 橋接 ---
@@ -277,7 +298,7 @@ fn reasoning_bridge_restores_reasoning_content() {
             ]}"#,
     )
     .unwrap();
-    let o = responses_to_openai(&req, "m");
+    let o = responses_to_openai(&req, "m", &[]);
     let msgs = o["messages"].as_array().unwrap();
     assert_eq!(msgs[1]["role"], "assistant");
     assert_eq!(msgs[1]["reasoning_content"], "plan: run ls");
@@ -298,7 +319,7 @@ fn reasoning_bridge_does_not_leak_across_user_turn() {
             ]}"#,
     )
     .unwrap();
-    let o = responses_to_openai(&req, "m");
+    let o = responses_to_openai(&req, "m", &[]);
     let msgs = o["messages"].as_array().unwrap();
     assert_eq!(msgs[0]["role"], "user");
     assert!(msgs[1].get("reasoning_content").is_none());
@@ -314,7 +335,7 @@ fn reasoning_bridge_reads_marker_from_encrypted_content() {
             ]}"#,
     )
     .unwrap();
-    let o = responses_to_openai(&req, "m");
+    let o = responses_to_openai(&req, "m", &[]);
     assert_eq!(o["messages"][0]["reasoning_content"], "raw think");
 }
 
@@ -322,7 +343,7 @@ fn reasoning_bridge_reads_marker_from_encrypted_content() {
 fn prompt_cache_key_passthrough() {
     let req: Value =
         serde_json::from_str(r#"{"model": "m", "prompt_cache_key": "sess-123"}"#).unwrap();
-    assert_eq!(responses_to_openai(&req, "m")["prompt_cache_key"], "sess-123");
+    assert_eq!(responses_to_openai(&req, "m", &[])["prompt_cache_key"], "sess-123");
     let req: Value = serde_json::from_str(r#"{"model": "m"}"#).unwrap();
-    assert!(responses_to_openai(&req, "m").get("prompt_cache_key").is_none());
+    assert!(responses_to_openai(&req, "m", &[]).get("prompt_cache_key").is_none());
 }

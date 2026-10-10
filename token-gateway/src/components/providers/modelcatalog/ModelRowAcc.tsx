@@ -28,6 +28,9 @@ import {
 import {
   ContextWindowField,
 } from "./ContextWindowField";
+import {
+  ProbeResult,
+} from "./ProbeResult";
 
 /** 模型行：唯讀摘要＋點選展開編輯（macOS inspector 手風琴）。 */
 export function ModelRowAcc(props: {
@@ -75,6 +78,37 @@ export function ModelRowAcc(props: {
     onError: (e) => props.onMsg(String(e)),
   });
   const { dialog: confirmDialog, ask } = useConfirm();
+  // 偵測：**先測協議、再測思考強度**。
+  //
+  // 順序不能顛倒：強度只在「協議通了」的前提下才有意義，而且實測只走
+  // Anthropic 的模型（例如 opencode-go 的 claude-haiku-5-5）在 Codex 底下
+  // 永遠到不了 —— 那時該直接講清楚，不要再花 9 筆請求測強度。
+  const probe = useMutation({
+    mutationFn: async () => {
+      const proto = await api.modelProbeProtocol(row.provider_id, row.id);
+      if (proto.protocol !== "chat" && proto.protocol !== "responses") {
+        return { proto, reason: null as null | Awaited<ReturnType<typeof api.modelProbeReasoning>> };
+      }
+      const reason = await api.modelProbeReasoning(row.provider_id, row.id);
+      return { proto, reason };
+    },
+    onSuccess: ({ proto, reason }) => {
+      props.onChanged();
+      if (!reason) {
+        props.onMsg(
+          `協議：${proto.protocol ?? "三種都不通"}　${proto.protocol === "anthropic"
+            ? "（Codex 到不了它；改用 Claude Code，或另開一個 anthropic 格式的來源）"
+            : "（先確認模型名與金鑰）"}`,
+        );
+        return;
+      }
+      props.onMsg(
+        `協議：${proto.protocol}　思考強度：支援 ${reason.supported.join(" / ") || "（無）"}` +
+          (reason.unsupported.length ? `；不支援 ${reason.unsupported.join(" / ")}` : ""),
+      );
+    },
+    onError: (e) => props.onMsg(String(e)),
+  });
   const base: UsableModelInput = {
     provider_id: row.provider_id,
     display_name: row.display_name,
@@ -222,7 +256,7 @@ export function ModelRowAcc(props: {
               }))}
             />
           </div>
-          <div className="flex gap-2 pt-2.5">
+          <div className="flex items-center gap-2 pt-2.5">
             <button
               className="btn-primary px-4 py-1.5 text-xs disabled:opacity-40"
               disabled={save.isPending}
@@ -230,7 +264,40 @@ export function ModelRowAcc(props: {
             >
               儲存
             </button>
+            <button
+              className="btn-ghost px-3 py-1.5 text-xs disabled:opacity-40"
+              disabled={probe.isPending}
+              title="先實測這個模型走哪種協議，再測它支援哪些思考強度（會對上游發真正的請求）"
+              onClick={() => probe.mutate()}
+            >
+              {probe.isPending ? "偵測中…" : "偵測協議與思考強度"}
+            </button>
           </div>
+          {probe.data && (
+            <div className="space-y-1 pt-1.5">
+              <div className="rounded-lg bg-fg/[0.03] px-3 py-2 text-[11px] text-fg/60">
+                協議：
+                <span className="text-fg/85">
+                  {probe.data.proto.protocol ?? "三種都不通"}
+                </span>
+                {probe.data.proto.attempts.map((a) => (
+                  <span key={a.protocol} className="ml-2 text-fg/30">
+                    {a.protocol}={a.status || "連線失敗"}
+                  </span>
+                ))}
+              </div>
+              {probe.data.reason ? (
+                <ProbeResult report={probe.data.reason} />
+              ) : (
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2 text-[11px] break-words text-amber-300/90">
+                  {probe.data.proto.summary}
+                  <div className="pt-1 text-fg/40">
+                    協議不通就沒有繼續測思考強度（那些請求只會白花）。
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           </div>
         </div>
       </div>

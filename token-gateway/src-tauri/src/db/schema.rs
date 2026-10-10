@@ -176,6 +176,32 @@ CREATE TABLE IF NOT EXISTS provider_model_protocol (
     PRIMARY KEY (provider_id, model, declared_format)
 );
 
+-- 學到的「思考強度支援」記憶（2026-10-08）。
+--
+-- 由來：上游**不公開**每個模型支援哪些 reasoning_effort（OpenCode 的
+-- `/models` 只回 id 等四個欄位、官方文件也沒有），所以只能實測。而送錯值
+-- 上游回的是泛用的 `400 Invalid request parameters`，與其他參數錯誤無法區分。
+--
+-- 兩個寫入來源：
+-- - `probe`：使用者在 App 按「偵測思考強度」，逐一實測（權威）
+-- - `learned`：平常請求被上游以 `Invalid request parameters` 拒收時順手記下
+--   （零額外請求；但只在「該次確實送了 reasoning_effort」時才可信）
+--
+-- `level` 用 `__none__` 代表「不帶 reasoning_effort」那一筆基準結果 ——
+-- 基準活著才代表「其他強度被拒」是強度問題，而不是模型／金鑰壞了。
+--
+-- **不覆寫使用者的 `provider_models.reasoning`**：那份是使用者的宣告，
+-- 這張是「上游實測會怎樣」。目錄生成時取兩者的交集。
+CREATE TABLE IF NOT EXISTS provider_model_reasoning (
+    provider_id INTEGER NOT NULL,
+    model       TEXT NOT NULL,
+    level       TEXT NOT NULL,
+    supported   INTEGER NOT NULL,
+    source      TEXT NOT NULL,
+    checked_at  INTEGER NOT NULL,
+    PRIMARY KEY (provider_id, model, level)
+);
+
 -- 請求追蹤。刻意「只在異常時寫入」（被剝離欄位、上游 4xx/5xx、body 解析
 -- 失敗、重試），正常請求不寫，避免日誌洪水。
 -- 隱私：body_sha256 是請求體指紋；body_hex 僅在 body 解析失敗時記錄

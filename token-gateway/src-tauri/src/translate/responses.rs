@@ -12,7 +12,11 @@ use super::responses_tools::{
 /// 覆蓋 Codex 實際使用面：instructions、input（字符串/items）、function_call(_output)、
 /// custom_tool_call(_output)、tools（扁平/自訂格式）、tool_choice、max_output_tokens、
 /// reasoning.effort、溫度採樣與 stream；其餘欄位丟棄。
-pub(crate) fn responses_to_openai(req: &Value, model: &str) -> Value {
+///
+/// `allowed`：這個模型可以用的思考強度（見 [`crate::models::allowed_efforts`]）。
+/// 不在裡面的 `reasoning.effort` 會被**丟掉**，讓上游用它自己的預設 ——
+/// 寧可不指定，也不要送一個會換來 400 的值。
+pub(crate) fn responses_to_openai(req: &Value, model: &str, allowed: &[String]) -> Value {
     let mut messages: Vec<Value> = vec![];
     if let Some(sys) = req.get("instructions").and_then(|i| i.as_str()) {
         if !sys.is_empty() {
@@ -183,18 +187,24 @@ pub(crate) fn responses_to_openai(req: &Value, model: &str) -> Value {
             );
         }
     }
-    // reasoning.effort → reasoning_effort：只轉發上游目錄明示支援的等級，
-    // 其餘（minimal/low 等）留空走上游預設，避免上游對不認識的值 400。
+    // reasoning.effort → reasoning_effort：**只轉發上游收得下的檔位**。
+    //
+    // 呼叫端傳進來的 `allowed` 是「這個模型可以用的強度」：使用者的宣告、
+    // 或實測記憶、或保守預設（見 `models::allowed_efforts`）。
+    //
+    // 舊版這裡是一串**硬編碼**的 `matches!(eff, "medium"|"high"|"xhigh"|"max")`，
+    // 註解卻寫「只轉發上游目錄明示支援的等級」——它從來沒有查過任何東西。
+    // 後果有兩個，而且方向剛好相反：
+    // - 轉發 `xhigh`／`max`，但那兩個在多個上游（實測兩個 MiMo）就是 400
+    // - 丟掉 `low`／`ultra`／`persistent`，使用者設了等於沒設
     if let Some(eff) = req
         .get("reasoning")
         .and_then(|r| r.get("effort"))
         .and_then(|e| e.as_str())
     {
-        if matches!(eff, "medium" | "high" | "xhigh" | "max") {
-            out.insert(
-                "reasoning_effort".to_string(),
-                Value::String(eff.to_string()),
-            );
+        let eff = eff.trim().to_lowercase();
+        if allowed.iter().any(|a| a.eq_ignore_ascii_case(&eff)) {
+            out.insert("reasoning_effort".to_string(), Value::String(eff));
         }
     }
     if let Some(tools) = req.get("tools").and_then(|t| t.as_array()) {

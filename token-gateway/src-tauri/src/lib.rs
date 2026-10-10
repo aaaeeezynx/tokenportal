@@ -132,6 +132,11 @@ pub fn run() {
             commands::catalog_get,
             commands::models_list,
             commands::model_counts,
+            // 思考強度探測（見 models/probe.rs）
+            commands::model_probe_reasoning,
+            commands::model_reasoning_facts,
+            // 協議探測（見 models/protocol_probe.rs）
+            commands::model_probe_protocol,
             commands::model_add,
             commands::model_update,
             commands::model_delete,

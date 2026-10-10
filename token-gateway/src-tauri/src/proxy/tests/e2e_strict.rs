@@ -23,3 +23,54 @@
     mod diagnostics;
     #[path = "e2e_strict/failover.rs"]
     mod failover;
+    // 被動學習：上游拒收 reasoning_effort 時記下該強度並重試
+    #[path = "e2e_strict/reasoning_learn.rs"]
+    mod reasoning_learn;
+    // 被動學習：上游拒收推理簽章時剝掉重試並記住
+    #[path = "e2e_strict/encrypted_learn.rs"]
+    mod encrypted_learn;
+
+    // ------------------------------------------------------ 共用 helper ---
+    // 子模組以 `use super::*;` 取用（本檔的項目對它們是可見的）。
+
+    /// 插一個來源（base_url 先留佔位，測試再 UPDATE 成假上游的埠）。
+    fn seed_provider(conn: &rusqlite::Connection, name: &str) -> i64 {
+        conn.execute(
+            "INSERT INTO providers (name, app_type, api_format, base_url, api_key, auth_scheme,
+             models_json, priority, enabled, created_at, updated_at)
+             VALUES (?1,'codex','openai-chat','PLACEHOLDER','up-key','bearer','[]',0,1,0,0)",
+            [name],
+        )
+        .unwrap();
+        conn.query_row("SELECT id FROM providers WHERE name=?1", [name], |r| r.get(0))
+            .unwrap()
+    }
+
+    /// 插一個可用模型。
+    fn seed_model(conn: &rusqlite::Connection, pid: i64, actual: &str, reasoning: Option<&str>) {
+        conn.execute(
+            "INSERT INTO provider_models
+                 (provider_id, display_name, actual_model, reasoning, ord, enabled)
+             VALUES (?1, ?2, ?2, ?3, 0, 1)",
+            rusqlite::params![pid, actual, reasoning.unwrap_or("")],
+        )
+        .unwrap();
+    }
+
+    /// 簽一把綁這個來源的本地 Key。
+    fn seed_key(conn: &rusqlite::Connection, pid: i64, name: &str) -> String {
+        keys::create_key(
+            conn,
+            &keys::KeyInput {
+                name: name.into(),
+                provider_id: Some(pid),
+                quota_tokens: -1,
+                rate_limit_qpm: 0,
+                allowed_models: vec![],
+                allowed_apps: vec![],
+                expires_at: None,
+            },
+        )
+        .unwrap()
+        .secret
+    }

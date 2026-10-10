@@ -112,6 +112,76 @@
         assert!(strip_encrypted_content(br#"{"model":"m","input":"hi"}"#).is_none());
     }
 
+    /// `store: false` 的判斷（2026-10-10 的 bug 靠它決定要不要剝簽章）。
+    #[test]
+    fn is_stateless_detects_store_false_only() {
+        assert!(is_stateless(br#"{"model":"m","store":false}"#));
+        assert!(is_stateless(br#"{"model":"m","store": false}"#));
+        assert!(is_stateless(br#"{"model":"m", "store" :false ,"x":1}"#));
+        assert!(!is_stateless(br#"{"model":"m","store":true}"#));
+        assert!(!is_stateless(br#"{"model":"m"}"#));
+        // 值不是布林、或只是別處出現 "store" 字樣，都不算
+        assert!(!is_stateless(br#"{"model":"m","store":"false"}"#));
+        assert!(!is_stateless(br#"{"note":"store"}"#));
+        // 註：實作是全文掃描，巢狀的 store 也會命中。Responses 請求的 store
+        // 一定是頂層，而誤判的方向是「保留簽章」—— 比剝掉安全，故不特別排除。
+    }
+
+    /// ★ 迴歸：`store: false` 時**不可**剝掉推理簽章。
+    ///
+    /// 那時上游不保存回應，推理的重播完全依賴 `encrypted_content`；
+    /// 剝掉會換來 `Referenced reasoning item 'rs_…' was not found or has expired.`
+    #[test]
+    fn stateless_request_keeps_encrypted_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = crate::db::open_and_ensure(&dir.path().join("s.db")).unwrap();
+        let body = br#"{"model":"m","store":false,"input":[
+            {"type":"reasoning","id":"rs_1","encrypted_content":"SIG","summary":[]}
+        ]}"#;
+        let out = strip_for_upstream(&conn, 7, body.to_vec(), InFmt::Responses, false);
+        let s = String::from_utf8(out).unwrap();
+        assert!(s.contains("SIG"), "無狀態請求必須保留簽章：{s}");
+    }
+
+    /// 非無狀態（上游有保存）→ 照舊剝掉，涵蓋原本那個 ChatGPT 簽章問題。
+    #[test]
+    fn stateful_request_still_strips_encrypted_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = crate::db::open_and_ensure(&dir.path().join("s2.db")).unwrap();
+        let body = br#"{"model":"m","store":true,"input":[
+            {"type":"reasoning","id":"rs_1","encrypted_content":"SIG","summary":[]}
+        ]}"#;
+        let out = strip_for_upstream(&conn, 7, body.to_vec(), InFmt::Responses, false);
+        let s = String::from_utf8(out).unwrap();
+        assert!(!s.contains("SIG"), "有保存時仍該剝掉：{s}");
+    }
+
+    /// 已學到「這個來源就是拒收簽章」→ 連無狀態請求也要剝。
+    #[test]
+    fn learned_rejection_overrides_stateless_keep() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = crate::db::open_and_ensure(&dir.path().join("s3.db")).unwrap();
+        crate::trace::remember_stripped(&conn, 7, ENCRYPTED_CONTENT_FIELD).unwrap();
+        let body = br#"{"model":"m","store":false,"input":[
+            {"type":"reasoning","id":"rs_1","encrypted_content":"SIG","summary":[]}
+        ]}"#;
+        let out = strip_for_upstream(&conn, 7, body.to_vec(), InFmt::Responses, false);
+        let s = String::from_utf8(out).unwrap();
+        assert!(!s.contains("SIG"), "學到拒收後就該剝：{s}");
+    }
+
+    /// 只認這個片語，別種 400 不該被誤判成「要剝簽章」。
+    #[test]
+    fn encrypted_content_rejection_phrase_is_specific() {
+        assert!(is_encrypted_content_rejected(
+            "reasoning `encrypted_content` was not issued to this caller"
+        ));
+        assert!(!is_encrypted_content_rejected("Invalid request parameters"));
+        assert!(!is_encrypted_content_rejected(
+            "Referenced reasoning item 'rs_1' was not found or has expired."
+        ));
+    }
+
 
     #[test]
     fn strip_encrypted_content_handles_arrays_and_deep_nesting() {

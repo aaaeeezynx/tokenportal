@@ -213,7 +213,9 @@ pub(super) fn translate_forward_body(
         };
         let actual = crate::models::resolve_actual(conn, provider_id, model_raw);
         fwd_value = Some(if fmt.kind == TransKind::ResponsesToChat {
-            crate::translate::responses_to_openai(&v, &actual)
+            // 思考強度只轉發「這個模型收得下」的檔位（見 models::allowed_efforts）
+            let allowed = crate::models::allowed_efforts(conn, provider_id, &actual);
+            crate::translate::responses_to_openai(&v, &actual, &allowed)
         } else {
             crate::translate::anthropic_to_openai(&v, &actual)
         });
@@ -265,7 +267,7 @@ pub(super) fn translate_forward_body(
 }
 /// 依序套用所有「上游已知拒收」的剝離：
 /// ① 該渠道學到的拒收欄位（SQLite 持久化記憶，見 §3 B2）
-/// ② OpenAI 專屬推理簽章 `encrypted_content`（§3 B1）
+/// ② OpenAI 專屬推理簽章 `encrypted_content`（§3 B1）—— **有條件**，見下
 /// ③ 上游不支援的 tool types（Codex `custom` → DeepSeek 400）
 /// ④ 直通 chat 的歷史配對修復（舊 session 孤兒 tool_calls；有效歷史不動）
 ///
@@ -277,13 +279,31 @@ pub(super) fn strip_for_upstream(
     in_fmt: InFmt,
     translated: bool,
 ) -> Vec<u8> {
-    for f in trace::load_stripped(conn, provider_id) {
-        if let Some(nb) = strip_json_field(&body, &f) {
+    let learned = trace::load_stripped(conn, provider_id);
+    let learned_enc = learned.iter().any(|f| f == ENCRYPTED_CONTENT_FIELD);
+    for f in learned.iter().filter(|f| *f != ENCRYPTED_CONTENT_FIELD) {
+        if let Some(nb) = strip_json_field(&body, f) {
             body = nb;
         }
     }
-    if let Some(stripped) = strip_encrypted_content(&body) {
-        body = stripped;
+    // ② 推理簽章 `encrypted_content`：**不能無條件剝**。
+    //
+    // 2026-10-10 的真實故障：客戶端是 `store: false`（Codex 的
+    // `disable_response_storage = true`）時，上游**不保存回應**，推理的重播
+    // 完全依賴 `encrypted_content`。把它剝掉，上游就只剩一個查不到的 ID：
+    // `Referenced reasoning item 'rs_…' was not found or has expired.`
+    //
+    // 那個剝離原本是為了修**另一個**真實問題：ChatGPT 授權模式下由 OpenAI
+    // 發出的簽章，送到第三方上游會被回 `was not issued to this caller`。
+    // 兩者的差別是「簽章是不是這個上游發的」，靜態分不出來 —— 所以：
+    // - 無狀態請求（`store: false`）→ 保留（那是重播的唯一依據）
+    // - 其他 → 照舊剝（涵蓋原本那個簽章問題）
+    // - 已學到「這個來源就是會拒收簽章」→ 連無狀態也剝（見 proxy/retry.rs 的
+    //   反應式學習，寫進 `provider_stripped_fields`）
+    if learned_enc || !is_stateless(&body) {
+        if let Some(stripped) = strip_encrypted_content(&body) {
+            body = stripped;
+        }
     }
     if !translated {
         if let Some(stripped) = strip_unsupported_tools(&body) {

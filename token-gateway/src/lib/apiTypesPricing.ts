@@ -81,7 +81,9 @@ export type ReasoningLevel =
   | "medium"
   | "high"
   | "xhigh"
-  | "max";
+  | "max"
+  | "ultra"
+  | "persistent";
 
 export const REASONING_OPTIONS: { id: ReasoningLevel; label: string }[] = [
   { id: "unset", label: "未設定" },
@@ -91,7 +93,61 @@ export const REASONING_OPTIONS: { id: ReasoningLevel; label: string }[] = [
   { id: "high", label: "high" },
   { id: "xhigh", label: "xhigh" },
   { id: "max", label: "max" },
+  // Codex 生態真實存在的兩檔；實測會被送到上游（2026-10-08 補）
+  { id: "ultra", label: "ultra" },
+  { id: "persistent", label: "persistent" },
 ];
+
+/** 思考強度探測的報告（見後端 `models/probe.rs`）。 */
+export interface ReasoningProbeReport {
+  model: string;
+  /** 基準請求（不帶強度）是否通過；沒通過就不會測任何候選 */
+  baseline_ok: boolean;
+  /** 整輪中止的原因（人話） */
+  aborted: string | null;
+  supported: string[];
+  unsupported: string[];
+  /** 拿不到明確答案的（429／5xx／逾時）——不會寫入記憶 */
+  inconclusive: { level: string; supported: boolean; detail: string }[];
+  requests: number;
+  checked_at: number;
+}
+
+/** 一筆「這個模型的這個強度上游收不收」的記憶。 */
+export interface ReasoningFact {
+  level: string;
+  supported: boolean;
+  /** `probe`（實測，權威）或 `learned`（從真實失敗順手學到） */
+  source: string;
+  checked_at: number;
+}
+
+/** 一次協議嘗試（見後端 `models/protocol_probe.rs`）。 */
+export interface ProtocolAttempt {
+  /** `chat` / `responses` / `anthropic` */
+  protocol: string;
+  status: number;
+  detail: string;
+}
+
+/**
+ * 協議探測報告。
+ *
+ * 為什麼要測這個：同一個來源可以**逐模型**混用協議 —— 實測 opencode-go 的
+ * `claude-haiku-5-5` 只吃 Anthropic Messages，同來源的 deepseek 吃 OpenAI chat。
+ * 但接口格式是**來源級**設定，表達不了這件事，於是目錄會把一個 Codex
+ * 永遠到不了的模型也提供出去。
+ */
+export interface ProtocolProbeReport {
+  model: string;
+  /** 通的協議；三種都不通就是 null */
+  protocol: string | null;
+  attempts: ProtocolAttempt[];
+  requests: number;
+  checked_at: number;
+  /** 給人看的一句話（後端組好，前端直接顯示，免得兩邊各寫一份文案） */
+  summary: string;
+}
 
 export interface PriceExtractResult {
   in_pm: number;

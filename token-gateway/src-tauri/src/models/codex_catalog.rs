@@ -166,8 +166,32 @@ fn level_fallback_desc(e: &str) -> &'static str {
         "medium" => "Balances speed and reasoning depth for everyday tasks",
         "high" => "Greater reasoning depth for complex problems",
         "xhigh" => "Extra high reasoning depth for complex problems",
+        "ultra" => "Very high reasoning depth for complex problems",
+        "persistent" => "Keeps reasoning active for long-running problems",
         _ => "Maximum reasoning depth",
     }
+}
+
+/// 把一串等級名轉成 `(名, 描述)`：描述優先取模板並集，缺了就用標準文案。
+///
+/// 需要這一步是因為 `ultra`／`persistent` 可能**不在模板並集裡**
+/// （本機的 cc-switch 模板只有 low/medium/high/xhigh/max），
+/// 但實測偵測得到它們時仍然必須能寫進目錄 —— Codex 的目錄要求每檔帶描述。
+fn with_desc(names: &[String], union: &[(String, String)]) -> Vec<(String, String)> {
+    let mut v: Vec<(String, String)> = names
+        .iter()
+        .map(|e| {
+            let d = union
+                .iter()
+                .find(|(fe, _)| fe == e)
+                .map(|(_, d)| d.clone())
+                .filter(|d| !d.is_empty())
+                .unwrap_or_else(|| level_fallback_desc(e).to_string());
+            (e.clone(), d)
+        })
+        .collect();
+    v.sort_by_key(|(e, _)| crate::models::level_rank(e));
+    v
 }
 
 /// 模板各模型思考等級並集（含描述），規範序在前、模板自帶等級按出現序附加。
@@ -232,31 +256,47 @@ fn all_levels(union: &[(String, String)]) -> Vec<(String, String)> {
     }
 }
 
-/// 依模型 reasoning 值算目錄檔位：unset/空 = 全部預設檔位；
-/// 指定 = 按規範序過濾到已知檔位（拼錯值丟棄），全被丟棄時退回全部預設。
-/// 返回 (檔位列表, 是否顯式指定)。
+/// 依模型 reasoning 值 ＋ **實測記憶** 算目錄檔位。
+///
+/// 三段語意：
+/// 1. **使用者明確宣告**（非空）→ 用他宣告的（拼錯／不在模板裡的值丟棄）
+/// 2. **空值 ＋ 有偵測紀錄** → 該模型**可用的全部**強度（= 實測支援集合）
+/// 3. **空值 ＋ 沒偵測紀錄** → 維持舊行為：模板並集全部檔位
+///
+/// 三種情況最後都會**扣掉「已知不支援」**的強度。這是 2026-10-08 那個 400 的
+/// 根治：使用者把 `xhigh` 填進宣告、或根本沒填，目錄都不會再把它提供給 Codex。
+///
+/// 返回 `(檔位列表, 是否顯式指定)`。列表可以是空的 —— 那代表「這個模型不吃
+/// 任何 reasoning_effort」，Codex 就不會給出強度選項（比亂給一個會 400 的好）。
 fn levels_for(
+    conn: &Connection,
+    provider_id: i64,
+    model: &str,
     reasoning: &str,
     union: &[(String, String)],
 ) -> (Vec<(String, String)>, bool) {
-    let known = all_levels(union);
     let spec: Vec<String> = reasoning
         .split(',')
         .map(|s| s.trim().to_lowercase())
         .filter(|s| !s.is_empty() && s != "unset")
         .collect();
-    if spec.is_empty() {
-        return (known, false);
-    }
-    let picked: Vec<(String, String)> = known
-        .iter()
-        .filter(|(fe, _)| spec.contains(fe))
-        .cloned()
-        .collect();
-    if picked.is_empty() {
-        return (known, false);
-    }
-    (picked, true)
+    let supported = crate::models::known_supported(conn, provider_id, model);
+    let unsupported = crate::models::known_unsupported(conn, provider_id, model);
+
+    let (mut names, explicit) = if !spec.is_empty() {
+        (spec, true)
+    } else if crate::models::has_facts(conn, provider_id, model) {
+        // 測過了 → 用實測支援集合。**可能是空的**：那代表這個模型不吃任何
+        // reasoning_effort，目錄就該宣告成空陣列（Codex 不提供強度選項）。
+        (supported, false)
+    } else {
+        // 沒偵測過 → 維持舊行為（模板並集），UI 會提示「尚未偵測」
+        return (all_levels(union), false);
+    };
+
+    names.retain(|n| !unsupported.iter().any(|u| u == n));
+    names.dedup();
+    (with_desc(&names, union), explicit)
 }
 
 /// 模型沒填 `context_window` 時，目錄寫入的預設值（256K）。
@@ -296,27 +336,38 @@ pub(crate) fn codex_catalog_generate(
         .ok_or("模板無 models 條目".to_string())?
         .clone();
     let union = template_levels_union(&tpl);
-    // 當前來源啟用模型（目錄主體，排在前）
-    let mut rows: Vec<(String, String, Option<i64>, String)> = models_list(conn, provider_id)
+    // 當前來源啟用模型（目錄主體，排在前）。
+    // 帶上 provider_id：思考強度的實測記憶是逐來源的。
+    type Row = (i64, String, String, Option<i64>, String);
+    let mut rows: Vec<Row> = models_list(conn, provider_id)
         .map_err(|e| e.to_string())?
         .into_iter()
         .filter(|r| r.enabled)
-        .map(|r| (r.display_name, r.actual_model, r.context_window, r.reasoning))
+        .map(|r| {
+            (
+                provider_id,
+                r.display_name,
+                r.actual_model,
+                r.context_window,
+                r.reasoning,
+            )
+        })
         .collect();
     // 其他啟用來源的模型（聯合目錄；關閉時僅當前來源，避免污染選擇器）
-    let others: Vec<(String, String, Option<i64>, String)> = if union_others {
+    let others: Vec<Row> = if union_others {
         let mut stmt = conn
             .prepare(
-                "SELECT m.display_name, m.actual_model, m.context_window, m.reasoning
+                "SELECT m.provider_id, m.display_name, m.actual_model,
+                        m.context_window, m.reasoning
                  FROM provider_models m JOIN providers p ON p.id = m.provider_id
                  WHERE m.enabled = 1 AND p.enabled = 1 AND m.provider_id != ?1
                  ORDER BY p.priority ASC, p.id ASC, m.ord ASC, m.id ASC",
             )
             .map_err(|e| e.to_string())?;
         // 先綁局部再返回：尾表達式的 `?` 臨時值否則活得比 stmt 久（E0597）
-        let mapped: Vec<(String, String, Option<i64>, String)> = stmt
+        let mapped: Vec<Row> = stmt
             .query_map(params![provider_id], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
             })
             .map_err(|e| e.to_string())?
             .filter_map(|x| x.ok())
@@ -331,9 +382,19 @@ pub(crate) fn codex_catalog_generate(
     }
     let mut seen = std::collections::HashSet::new();
     let mut out = vec![];
-    for (display, actual, cw, reasoning) in rows {
+    for (pid, display, actual, cw, reasoning) in rows {
         let slug = actual.trim().to_string();
         if slug.is_empty() || !seen.insert(slug.clone()) {
+            continue;
+        }
+        // 實測只走 Anthropic 協議的模型**不要提供給 Codex**。
+        //
+        // 2026-10-10 的實例：opencode-go 的 `claude-haiku-5-5` 在 `/models`
+        // 清單裡，但只吃 `/messages`。目錄照樣把它列出來，使用者選了只會拿到
+        // 「此模型不支援本協議」—— 而真正的原因（協議不對、而且網關沒有
+        // OpenAI → Anthropic 的反向翻譯）從錯誤訊息完全看不出來。
+        // 提供一個永遠會失敗的模型，比不提供更糟。
+        if crate::models::is_unreachable_for_openai_clients(conn, pid, &slug) {
             continue;
         }
         let mut e = first.clone();
@@ -341,21 +402,27 @@ pub(crate) fn codex_catalog_generate(
         // issue #3668：桌面版 /model 與選擇器認 `model` 欄位，只寫 slug 會顯示空白
         e["model"] = serde_json::Value::String(slug.clone());
         e["display_name"] = serde_json::Value::String(display);
-        e["description"] = serde_json::Value::String(slug);
+        e["description"] = serde_json::Value::String(slug.clone());
         // 上下文視窗：有填用填的，沒填用 256K 預設。
         // 舊版是「None 就不覆寫」→ 模板的 1M 會漏進每一個沒填的模型（見常數註解）。
         let cwv = cw.filter(|n| *n > 0).unwrap_or(DEFAULT_CONTEXT_WINDOW);
         e["context_window"] = serde_json::Value::from(cwv);
         e["max_context_window"] = serde_json::Value::from(cwv);
-        let (levels, explicit) = levels_for(&reasoning, &union);
+        let (levels, explicit) = levels_for(conn, pid, &slug, &reasoning, &union);
         e["supported_reasoning_levels"] = serde_json::Value::Array(
             levels
                 .iter()
                 .map(|(ef, d)| serde_json::json!({"effort": ef, "description": d}))
                 .collect(),
         );
-        if explicit {
-            if let Some((first_lv, _)) = levels.first() {
+        // 預設檔位：顯式宣告取其第一個；否則若繼承來的預設不在清單裡（實測把它
+        // 濾掉了），也要改成清單的第一個 —— 留一個不存在的預設會讓 Codex 選到它。
+        if let Some((first_lv, _)) = levels.first() {
+            let inherited_ok = e
+                .get("default_reasoning_level")
+                .and_then(|v| v.as_str())
+                .is_some_and(|d| levels.iter().any(|(l, _)| l == d));
+            if explicit || !inherited_ok {
                 e["default_reasoning_level"] = serde_json::Value::String(first_lv.clone());
             }
         }

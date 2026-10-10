@@ -3,9 +3,13 @@
 use rusqlite::{params, Connection, Row};
 use serde::{Deserialize, Serialize};
 
-/// 思考等級（七檔；unset = 不指定，目錄使用全部預設檔位）。
-pub const REASONINGS: [&str; 7] = [
-    "unset", "minimal", "low", "medium", "high", "xhigh", "max",
+/// 思考等級（九檔；unset = 不指定）。
+///
+/// `ultra`／`persistent` 是 2026-10-08 補的：它們是 Codex 生態真實存在的檔位
+/// （Codex 自己的 bundled 目錄就含 `ultra`），實測也確實會被送到上游。
+/// 不補的話，偵測到也存不進來。
+pub const REASONINGS: [&str; 9] = [
+    "unset", "minimal", "low", "medium", "high", "xhigh", "max", "ultra", "persistent",
 ];
 
 #[derive(Debug, Clone, Serialize)]

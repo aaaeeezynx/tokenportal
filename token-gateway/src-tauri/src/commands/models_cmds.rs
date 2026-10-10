@@ -42,6 +42,73 @@ pub fn catalog_get(
     crate::models::catalog_get(&conn, provider_id).map_err(|e| e.to_string())
 }
 
+/// 逐一實測這個模型支援哪些思考強度，並寫進記憶。
+///
+/// **會對上游發真正的模型請求**（1 筆基準 ＋ 8 筆候選，各生成 4 個 token），
+/// 所以只在使用者按按鈕時才跑。鎖的策略與 `catalog_fetch` 相同：
+/// 短鎖讀設定 → 放鎖做網路（最長 9×30 秒）→ 短鎖寫記憶。
+#[tauri::command]
+pub async fn model_probe_reasoning(
+    app: AppHandle,
+    provider_id: i64,
+    model_id: i64,
+) -> Result<crate::models::ReasoningProbeReport, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db = app.state::<DbState>();
+        let cfg = {
+            let conn = db.conn.lock().map_err(|e| e.to_string())?;
+            crate::models::probe_read_cfg(&conn, provider_id, model_id)?
+        };
+        let report = crate::models::probe_model_http(&cfg);
+        {
+            let conn = db.conn.lock().map_err(|e| e.to_string())?;
+            crate::models::probe_write(&conn, provider_id, &report).map_err(|e| e.to_string())?;
+        }
+        Ok(report)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 逐一實測這個模型走哪一種協議（chat／responses／anthropic），並寫進記憶。
+///
+/// **會對上游發真正的請求**（最多 3 筆，找到就停）。用途是讓目錄知道
+/// 「這個模型 Codex 到得了嗎」—— 實測只走 Anthropic 的模型不該被提供給
+/// Codex（見 `models/protocol_probe.rs`）。
+#[tauri::command]
+pub async fn model_probe_protocol(
+    app: AppHandle,
+    provider_id: i64,
+    model_id: i64,
+) -> Result<crate::models::ProtocolProbeReport, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db = app.state::<DbState>();
+        let cfg = {
+            let conn = db.conn.lock().map_err(|e| e.to_string())?;
+            crate::models::probe_read_cfg(&conn, provider_id, model_id)?
+        };
+        let report = crate::models::probe_protocol_http(&cfg);
+        {
+            let conn = db.conn.lock().map_err(|e| e.to_string())?;
+            crate::models::probe_protocol_write(&conn, provider_id, &report)?;
+        }
+        Ok(report)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 這個模型目前的思考強度記憶（UI 顯示「上次偵測」用）。
+#[tauri::command]
+pub fn model_reasoning_facts(
+    db: State<DbState>,
+    provider_id: i64,
+    model: String,
+) -> Result<Vec<crate::models::ReasoningFact>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    Ok(crate::models::facts(&conn, provider_id, &model))
+}
+
 #[tauri::command]
 pub fn models_list(
     db: State<DbState>,
