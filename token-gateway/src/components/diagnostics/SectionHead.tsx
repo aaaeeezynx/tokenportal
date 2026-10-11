@@ -1,34 +1,4 @@
-//! 由 `components/Diagnostics.tsx` 拆分而來（原檔 563 行）。程式碼語意未改，只搬位置。
-
-import type { ReactNode } from "react";
-import { Icon } from "../icons";
-
-export function SectionHead(props: {
-  icon: "alert" | "bolt-fill" | "clock" | "sliders";
-  tile: string;
-  title: string;
-  caption?: string;
-  right?: ReactNode;
-}) {
-  return (
-    <div className="mb-3 flex items-center gap-2.5">
-      <span
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-fg"
-        style={{ background: props.tile }}
-      >
-        <Icon name={props.icon} size={17} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="text-[15px] font-semibold tracking-tight text-fg">
-          {props.title}
-        </div>
-        {props.caption && (
-          <div className="truncate text-[11px] text-fg/30">
-            {props.caption}
-          </div>
-        )}
-      </div>
-      {props.right}
-    </div>
-  );
-}
+//! 由 `settings/SectionHead.tsx` 與 `diagnostics/SectionHead.tsx` 兩份合併為
+//! `components/SectionHead.tsx`（同一視覺角色只留一套間距基準：gap-3 ＋ caption fg/35）。
+//! 本檔僅保留對外匯出（barrel），維持既有 import 路徑。
+export { SectionHead } from "../SectionHead";

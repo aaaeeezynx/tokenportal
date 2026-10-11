@@ -231,35 +231,37 @@ export default function ProvidersPage() {
         {view === "sources" && (
           <div className="grid items-start gap-4 lg:grid-cols-2">
             <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                className="btn-primary flex items-center gap-1.5 px-4 py-1.5 text-sm"
-                onClick={() => setEditing("new")}
-              >
-                <Icon name="plus" size={13} />
-                添加來源
-              </button>
-              <ProvidersIO count={providers.data?.length ?? 0} />
-            </div>
-            {listMsg && (
-              <p className="mb-2 text-xs text-emerald-400/80">{listMsg}</p>
-            )}
-            {providers.isPending && (
-              <p className="text-sm text-fg/30">載入中…</p>
-            )}
-        {listErr && (
-          <p className="mb-2 break-all text-xs text-red-400">{listErr}</p>
-        )}
-        <div ref={listRef} className="relative space-y-2">
-          {srcList.map((p, i) => srcCard(p, i))}
-          {dragId != null && drop != null && (
-            <div
-              key="drop-line"
-              className="pointer-events-none absolute right-0 left-0 h-1 rounded-full bg-[#0A84FF]"
-              style={{ top: drop.y }}
-            />
-          )}
-        </div>
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <button
+                  className="btn-primary flex items-center gap-1.5 px-4 py-1.5 text-sm"
+                  onClick={() => setEditing("new")}
+                >
+                  <Icon name="plus" size={13} />
+                  添加來源
+                </button>
+                <ProvidersIO count={providers.data?.length ?? 0} />
+              </div>
+              <div className="space-y-2">
+                {listMsg && (
+                  <p className="text-xs text-(--mac-green)">{listMsg}</p>
+                )}
+                {providers.isPending && (
+                  <p className="text-sm text-fg/30">載入中…</p>
+                )}
+                {listErr && (
+                  <p className="break-all text-xs text-(--mac-red)">{listErr}</p>
+                )}
+                <div ref={listRef} className="relative space-y-2">
+                  {srcList.map((p, i) => srcCard(p, i))}
+                  {dragId != null && drop != null && (
+                    <div
+                      key="drop-line"
+                      className="pointer-events-none absolute right-0 left-0 h-1 rounded-full bg-(--mac-accent)"
+                      style={{ top: drop.y }}
+                    />
+                  )}
+                </div>
+              </div>
             </div>
             <div className="min-w-0 lg:sticky lg:top-0">
               <SourceDetail
@@ -277,21 +279,19 @@ export default function ProvidersPage() {
           </div>
         )}
         {view === "tools" && (
-          <>
-        <ToolList
-          tools={tools.data || []}
-          isPending={tools.isPending}
-          error={tools.isError ? tools.error : null}
-          toggling={toggling}
-          rowErr={rowErr}
-          rowMsg={rowMsg}
-          doctorLines={doctorLines}
-          doctorBusy={doctorBusy}
-          onOpen={setSwitching}
-          onToggleRow={toggleRow}
-          onRunDoctor={runDoctor}
-        />
-          </>
+          <ToolList
+            tools={tools.data || []}
+            isPending={tools.isPending}
+            error={tools.isError ? tools.error : null}
+            toggling={toggling}
+            rowErr={rowErr}
+            rowMsg={rowMsg}
+            doctorLines={doctorLines}
+            doctorBusy={doctorBusy}
+            onOpen={setSwitching}
+            onToggleRow={toggleRow}
+            onRunDoctor={runDoctor}
+          />
         )}
       </div>
       {switching && (

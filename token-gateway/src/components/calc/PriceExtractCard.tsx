@@ -163,7 +163,7 @@ export function PriceExtractCard() {
           {imgB64 && <button className="btn-ghost px-2 py-1 text-[11px]" onClick={() => onFile(undefined)}>清除</button>}
         </div>
       </div>
-      {err && <p className="mt-2 text-xs text-red-400">{err}</p>}
+      {err && <p className="mt-2 text-xs text-(--mac-red)">{err}</p>}
       <div className="mt-2 flex items-center gap-2">
         <button className="btn-primary px-5 py-2 text-sm disabled:opacity-40" disabled={!canRun || run.isPending} onClick={() => run.mutate()}>
           {run.isPending ? "對比中…" : "開始對比"}
@@ -173,14 +173,14 @@ export function PriceExtractCard() {
       {ext && (
         <div className="anim-rise mt-3 space-y-3">
           <div className="rounded-xl bg-fg/[0.03] p-3.5 ring-1 ring-fg/10">
-            <div className="mb-2 flex flex-wrap items-center gap-2 text-xs font-semibold text-fg/70">
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-fg/70">
               <span>網站抽取值</span>
               <span className="font-normal text-fg/30">· 經 {ext.used_model} · 信心 {(ext.confidence * 100).toFixed(0)}% · {ext.currency}</span>
               <span className="font-mono font-normal text-fg/50">輸入 ${ext.in_pm} / 輸出 ${ext.out_pm} / 讀 ${ext.cache_read_pm} / 建 ${ext.cache_create_pm} · 1M＋1M 試算 ${trial(ext).toFixed(4)}</span>
             </div>
             {ext.source_note && <div className="mt-1 text-[11px] text-fg/30">{ext.source_note}</div>}
             <div className="mt-1 text-[11px] text-fg/40">證據：{ext.evidence}</div>
-            {ext.confidence < 0.5 && <div className="mt-1 text-[11px] text-amber-300/80">信心偏低，請對照原文核對。</div>}
+            {ext.confidence < 0.5 && <div className="mt-1 text-[11px] text-(--mac-amber)">信心偏低，請對照原文核對。</div>}
           </div>
           <div className="rounded-xl bg-fg/[0.03] p-3.5 ring-1 ring-fg/10">
             <div className="mb-2 flex items-center gap-2">
@@ -199,7 +199,7 @@ export function PriceExtractCard() {
               <div className="divide-y divide-fg/[0.06]">
                 {sorted.map((s) => {
                   const d = trial(ext) - trial(s);
-                  const cls = d === 0 ? "text-fg/40" : d > 0 ? "text-[#30d158]" : "text-amber-300";
+                  const cls = d === 0 ? "text-fg/40" : d > 0 ? "text-(--mac-green)" : "text-(--mac-amber)";
                   const txt = d === 0 ? "持平" : `${d > 0 ? "已存便宜" : "網站便宜"} ${Math.abs(d).toFixed(4)}`;
                   return (
                     <div key={s.key} className="flex items-center gap-2 py-1.5 text-xs">

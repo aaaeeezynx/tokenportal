@@ -78,7 +78,7 @@ export default function KeysPage() {
       )}
 
       <div className="glass p-5">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-fg/[0.06] text-fg/70">
               <Icon name="key" size={17} />
@@ -99,7 +99,7 @@ export default function KeysPage() {
           </button>
         </div>
 
-        {actionErr && <p className="mb-2 text-xs text-red-400">{actionErr}</p>}
+        {actionErr && <p className="mb-2 text-xs text-(--mac-red)">{actionErr}</p>}
 
         {keys.isPending ? (
           <p className="text-sm text-fg/30">載入中…</p>
@@ -151,7 +151,7 @@ export default function KeysPage() {
                           {daysLeft !== null && (
                             <span className="ml-1.5">
                               {daysLeft <= 3 ? (
-                                <span className="text-red-400">
+                                <span className="text-(--mac-red)">
                                   {daysLeft <= 0 ? "已耗盡" : `剩 ${daysLeft} 天`}
                                 </span>
                               ) : (
@@ -175,10 +175,10 @@ export default function KeysPage() {
                         <div
                           className={`h-full rounded-full bar-anim ${
                             pct > 95
-                              ? "bg-red-400/80"
+                              ? "bg-(--mac-red)/80"
                               : pct > 80
-                                ? "bg-amber-400/80"
-                                : "bg-[#30d158]/80"
+                                ? "bg-(--mac-amber)/80"
+                                : "bg-(--mac-green)/80"
                           }`}
                           style={{ width: `${pct}%` }}
                         />
@@ -225,7 +225,7 @@ export default function KeysPage() {
                       <Icon name="power" size={14} />
                     </button>
                     <button
-                      className="rounded-full p-2 text-fg/40 transition-colors hover:bg-red-500/10 hover:text-red-400"
+                      className="rounded-full p-2 text-fg/40 transition-colors hover:bg-red-500/10 hover:text-(--mac-red)"
                       title="刪除"
                       aria-label="刪除"
                       onClick={() =>

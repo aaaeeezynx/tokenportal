@@ -202,7 +202,7 @@ export function UsageQueryPanel(props: {
                   }))}
                 />
                 {tpl && (
-                  <p className="pt-1.5 text-[11px] leading-relaxed text-amber-300/80">
+                  <p className="pt-1.5 text-[11px] leading-relaxed text-(--mac-amber)">
                     {tpl.note}
                   </p>
                 )}

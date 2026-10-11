@@ -204,7 +204,7 @@ function Shell() {
       </div>
       {/* ── Sidebar（<md 收合為圖標軌） ── */}
       <aside className="mac-sidebar m-2 flex w-14 shrink-0 flex-col items-center px-1.5 py-3 md:w-52 md:items-stretch md:px-2.5">
-        <div className="flex items-center gap-2 px-2 pb-3">
+        <div className="flex items-center gap-2 px-2.5 pb-3">
           <span
             className="flex h-8 w-8 items-center justify-center rounded-[9px] text-fg"
             style={{
@@ -256,14 +256,14 @@ function Shell() {
       <div className="flex min-w-0 flex-1 flex-col py-2 pr-2">
         <div className="mx-auto w-full max-w-6xl shrink-0 px-3 md:px-5">
           <header className="mac-floatbar">
-            <div className="flex items-center justify-between gap-3 px-4 py-2.5 md:gap-4 md:px-5">
+            <div className="flex items-center justify-between gap-3 px-5 py-2.5 md:gap-4">
               <h1 className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-fg">
                 {t(active.label)}
               </h1>
               <ProxyPill />
             </div>
             {tab === "usage" && (
-              <div className="border-t border-fg/[0.06] px-4 py-2 md:px-5">
+              <div className="border-t border-fg/[0.06] px-5 py-2">
                 <UsageFilterBar
                   filter={uFilter}
                   onFilter={patchFilter}
@@ -273,7 +273,7 @@ function Shell() {
             )}
           </header>
         </div>
-        <main className="scroll-edge mx-auto w-full max-w-6xl flex-1 overflow-y-auto px-3 py-4 md:px-5 md:py-5">
+        <main className="scroll-edge mx-auto w-full max-w-6xl flex-1 overflow-y-auto px-3 py-4 md:px-5 md:py-5 [scrollbar-gutter:stable]">
           <div key={tab} className="anim-rise">
             {tab === "usage" && (
               <UsagePage

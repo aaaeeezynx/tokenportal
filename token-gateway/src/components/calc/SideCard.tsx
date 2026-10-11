@@ -11,14 +11,14 @@ export function SideCard(props: {
   const q = props.quote;
   return (
     <div
-      className={`glass-float p-4 ${props.winner ? "ring-1 ring-[#30d158]/40" : ""}`}
+      className={`glass-float p-4 ${props.winner ? "ring-1 ring-(--mac-green)/40" : ""}`}
     >
       <div className="flex items-center gap-2">
         <div className="text-sm font-semibold tracking-tight text-fg/85">
           {props.title}
         </div>
         {props.winner && (
-          <span className="rounded-full bg-[#30d158]/15 px-2 py-0.5 text-[10px] font-medium text-[#30d158]">
+          <span className="rounded-full bg-(--mac-green)/15 px-2 py-0.5 text-[10px] font-medium text-(--mac-green)">
             更便宜
           </span>
         )}

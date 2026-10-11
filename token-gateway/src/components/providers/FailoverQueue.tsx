@@ -100,7 +100,7 @@ export function FailoverQueue() {
                 {r.learned_format && (
                   <span
                     className="rounded px-1.5 py-px font-mono text-[10px]"
-                    style={{ background: "rgba(48,209,88,0.14)", color: "#30d158" }}
+                    style={{ background: "rgba(48,209,88,0.14)", color: "var(--mac-green)" }}
                     title="網關學到：這個模型用這個協議會通"
                   >
                     學到 {r.learned_format}
@@ -109,7 +109,7 @@ export function FailoverQueue() {
                 {r.open && (
                   <span
                     className="rounded px-1.5 py-px text-[10px]"
-                    style={{ background: "rgba(255,69,58,0.16)", color: "#ff6961" }}
+                    style={{ background: "rgba(255,69,58,0.16)", color: "var(--mac-red)" }}
                   >
                     冷卻中 {r.cooldown_secs}s（已排到最後）
                   </span>

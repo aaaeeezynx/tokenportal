@@ -53,7 +53,7 @@ export function TraceList(props: {
                   className="ml-2 rounded px-1.5 py-px text-[10px]"
                   style={{
                     background: "rgba(255,69,58,0.14)",
-                    color: "#ff6961",
+                    color: "var(--mac-red)",
                   }}
                 >
                   異常

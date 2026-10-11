@@ -9,6 +9,7 @@ import {
 import { ContributionGrid, GridRange } from "../usageActivity";
 import { TrendChart } from "../usageCharts";
 import { QuotaSection } from "../usageQuota";
+import { Stat } from "../../Stat";
 import { fmtCost, fmtInt, fmtPct } from "../usageTypes";
 import { type UseQueryResult } from "@tanstack/react-query";
 
@@ -40,14 +41,7 @@ export function OverviewLens(props: {
             ["本月訂閱費 $", fmtCost(subTotal)],
             ["合計成本 $", fmtCost(grandTotal)],
           ].map(([label, value], i) => (
-            <div
-              key={label}
-              className="glass-float float-hover anim-rise min-w-0 p-4"
-              style={{ animationDelay: `${i * 50}ms` }}
-            >
-              <div className="text-[11px] font-medium text-fg/35 uppercase tracking-wider">{label}</div>
-              <div className="mt-1.5 truncate text-xl font-semibold text-fg/90">{value}</div>
-            </div>
+            <Stat key={label} label={label} value={value} delay={i * 50} />
           ))}
         </div>
       )}
@@ -66,7 +60,7 @@ export function OverviewLens(props: {
       />
 
       <div className="glass min-w-0 p-3 md:p-5">
-        <div className="mb-2 flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm font-semibold tracking-tight text-fg/80">
+        <div className="mb-3 flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm font-semibold tracking-tight text-fg/80">
           <span className="shrink-0">Token 趨勢</span>
           {summary.data && (
             <span className="min-w-0 text-xs font-normal break-words text-fg/30">

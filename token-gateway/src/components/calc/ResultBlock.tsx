@@ -15,8 +15,8 @@ export function ResultBlock(props: {
   return (
     <div className="anim-rise space-y-3">
       {saving && (
-        <div className="glass flex items-center gap-2 border-[#30d158]/25 p-4">
-          <Icon name="check" size={15} className="shrink-0 text-[#30d158]" />
+        <div className="glass flex items-center gap-2 border-(--mac-green)/25 p-4">
+          <Icon name="check" size={15} className="shrink-0 text-(--mac-green)" />
           <span className="text-sm text-fg/80">
             {saving.cheap} 更便宜，省 ${saving.diff.toFixed(4)}（
             {saving.pct.toFixed(1)}%）

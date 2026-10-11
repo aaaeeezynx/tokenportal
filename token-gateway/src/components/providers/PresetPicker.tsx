@@ -84,7 +84,7 @@ export function PresetPicker(props: {
                 {p.base_url}
               </span>
               {p.note && (
-                <span className="w-full text-[11px] leading-snug text-amber-300/80">
+                <span className="w-full text-[11px] leading-snug text-(--mac-amber)">
                   {p.note}
                 </span>
               )}

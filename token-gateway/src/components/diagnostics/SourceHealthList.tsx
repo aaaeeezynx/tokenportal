@@ -45,8 +45,8 @@ export function SourceHealthList({ list }: { list: SourceHealth[] }) {
             className="rounded px-1.5 py-px text-[11px]"
             style={
               h.open
-                ? { background: "rgba(255,69,58,0.16)", color: "#ff6961" }
-                : { background: "rgba(48,209,88,0.14)", color: "#30d158" }
+                ? { background: "rgba(255,69,58,0.16)", color: "var(--mac-red)" }
+                : { background: "rgba(48,209,88,0.14)", color: "var(--mac-green)" }
             }
           >
             {h.open ? `冷卻中 ${h.cooldown_secs}s` : "正常"}

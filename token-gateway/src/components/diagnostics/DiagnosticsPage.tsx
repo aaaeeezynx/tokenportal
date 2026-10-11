@@ -111,7 +111,7 @@ export default function DiagnosticsPage() {
           </p>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-2.5 md:grid-cols-5">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
               <Stat label="追蹤總數" value={s?.total ?? 0} />
               <Stat
                 label="異常"
@@ -203,7 +203,7 @@ export default function DiagnosticsPage() {
                       className="rounded px-1.5 py-px font-mono text-[11px]"
                       style={{
                         background: "rgba(255,214,10,0.14)",
-                        color: "#ffd60a",
+                        color: "var(--mac-amber)",
                       }}
                     >
                       {f}

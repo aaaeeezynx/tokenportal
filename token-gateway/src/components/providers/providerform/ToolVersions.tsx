@@ -73,7 +73,7 @@ export function ToolVersions() {
       </div>
       {vers.isPending && <p className="text-sm text-fg/30">讀取版本中…</p>}
       {vers.isError && (
-        <p className="text-sm text-red-400">讀取失敗：{String(vers.error)}</p>
+        <p className="text-sm text-(--mac-red)">讀取失敗：{String(vers.error)}</p>
       )}
       {(vers.data || []).map((v) => {
         // 最新態：用 registry 比對；比不到＝檢查中。
@@ -95,10 +95,10 @@ export function ToolVersions() {
               <span className="shrink-0 text-xs text-fg/20">未安裝</span>
             ) : upToDate === true ? (
               <span className="flex shrink-0 items-center gap-1.5">
-                <span className="font-mono text-xs text-[#30d158]">
+                <span className="font-mono text-xs text-(--mac-green)">
                   {v.version ?? "未知版本"}
                 </span>
-                <span className="rounded-full bg-[#30d158]/10 px-2 py-0.5 text-[10px] font-medium text-[#30d158]">
+                <span className="rounded-full bg-(--mac-green)/10 px-2 py-0.5 text-[10px] font-medium text-(--mac-green)">
                   已是最新
                 </span>
               </span>
@@ -106,7 +106,7 @@ export function ToolVersions() {
               <span className="shrink-0 font-mono text-xs text-fg/45">
                 {v.version ?? "未知版本"}
                 {upToDate === false && latest != null && (
-                  <span className="text-amber-300/90"> → {latest}</span>
+                  <span className="text-(--mac-amber)"> → {latest}</span>
                 )}
                 {upToDate == null && (
                   <span className="text-fg/25">
@@ -132,7 +132,7 @@ export function ToolVersions() {
       {updMsg && (
         <p
           className={`mt-1.5 text-xs break-all whitespace-pre-wrap ${
-            updMsg.ok ? "text-fg/45" : "text-red-400"
+            updMsg.ok ? "text-fg/45" : "text-(--mac-red)"
           }`}
         >
           {updMsg.msg}

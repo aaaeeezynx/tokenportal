@@ -113,7 +113,7 @@ export default function GlobalPricingManager(props: {
               />
             </div>
           ))}
-          {err && <p className="pt-1 text-xs text-red-400">{err}</p>}
+          {err && <p className="mt-2 text-xs text-(--mac-red)">{err}</p>}
           <div className="flex justify-end gap-2 pt-2.5">
             <button
               className="btn-ghost px-4 py-1.5 text-xs"
@@ -134,7 +134,7 @@ export default function GlobalPricingManager(props: {
           </div>
         </div>
       )}
-      {err && !adding && <p className="mb-2 text-xs text-red-400">{err}</p>}
+      {err && !adding && <p className="mb-2 text-xs text-(--mac-red)">{err}</p>}
       <div className="mac-rows scroll-y max-h-[38vh]">
         {(list.data || []).map((p) => (
           <div key={p.model_norm} className="mac-row">
@@ -151,7 +151,7 @@ export default function GlobalPricingManager(props: {
                 </div>
               </div>
               <button
-                className="shrink-0 rounded-full p-1.5 text-fg/35 transition-colors hover:bg-red-500/10 hover:text-red-400"
+                className="shrink-0 rounded-full p-1.5 text-fg/35 transition-colors hover:bg-red-500/10 hover:text-(--mac-red)"
                 title="刪除"
                 onClick={() =>
                   ask(`刪除 ${p.model_norm} 的定價？`, () =>

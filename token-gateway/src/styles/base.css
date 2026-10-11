@@ -44,6 +44,28 @@
     inset 0 1px 0 rgb(var(--app-fg-rgb) / 0.08);
 }
 
+/* 導航項（選中＝輪廓式：描邊＋外發光＋accent 圖標，10% 底）— 全站統一基準。
+   原住 charts.css（檔頭自稱「圖表 hover」），搬回側欄樣式的家。 */
+.mac-side-item {
+  color: var(--mac-label-2);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  transition: background var(--mac-duration) var(--mac-ease), color var(--mac-duration) var(--mac-ease), border-color var(--mac-duration) var(--mac-ease), box-shadow var(--mac-duration) var(--mac-ease);
+}
+.mac-side-item:hover {
+  background: rgb(var(--app-fg-rgb) / 0.06);
+  color: var(--mac-label);
+}
+.mac-side-item[data-active="true"] {
+  background: var(--mac-selected-bg);
+  border-color: var(--mac-selected-border);
+  box-shadow: var(--mac-selected-shadow);
+  color: #fff;
+}
+.mac-side-item[data-active="true"] .mac-side-icon {
+  color: var(--mac-accent);
+}
+
 /* ====== 浮動 Toolbar（Liquid Glass 膠囊條） ====== */
 .mac-floatbar {
   backdrop-filter: blur(22px) saturate(1.4);

@@ -56,7 +56,7 @@ export function TraceDetail({ row }: { row: TraceRow }) {
                 className="rounded px-1.5 py-px font-mono text-[11px]"
                 style={{
                   background: "rgba(255,214,10,0.14)",
-                  color: "#ffd60a",
+                  color: "var(--mac-amber)",
                 }}
               >
                 {f}

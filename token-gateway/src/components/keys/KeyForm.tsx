@@ -163,7 +163,7 @@ export function KeyForm(props: {
       </div>
 
       {err && (
-        <div className="rounded-lg border border-red-500/20 bg-red-500/[0.05] px-3 py-2 text-xs text-red-400">
+        <div className="rounded-lg border border-red-500/20 bg-red-500/[0.05] px-3 py-2 text-xs text-(--mac-red)">
           {err}
         </div>
       )}

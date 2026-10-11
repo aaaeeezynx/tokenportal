@@ -24,13 +24,20 @@ export function ViewDialog(props: { item: LocalKey; onClose: () => void; onEdit:
 
   return (
     <div
-      className="fixed inset-0 z-[85] flex items-center justify-center glass-backdrop p-4"
+      className="fixed inset-0 z-[85] flex justify-center overflow-y-auto glass-backdrop p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) props.onClose();
       }}
     >
-      <div className="w-full max-w-md glass-panel pop-in p-5">
+      <div className="my-auto w-full max-w-md glass-panel pop-in p-5">
         <div className="flex items-center gap-2.5">
+          <button
+            className="rounded-full bg-fg/[0.06] p-1.5 text-fg/55 transition-colors hover:bg-fg/[0.1] hover:text-fg"
+            onClick={props.onClose}
+            title="關閉"
+          >
+            <Icon name="x" size={14} />
+          </button>
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-fg/[0.06] text-fg/70">
             <Icon name="key" size={17} />
           </span>
@@ -40,13 +47,6 @@ export function ViewDialog(props: { item: LocalKey; onClose: () => void; onEdit:
               {k.key_prefix} · {k.enabled ? "已啟用" : "已停用"}
             </div>
           </div>
-          <button
-            className="rounded-full bg-fg/[0.055] p-1.5 text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
-            onClick={props.onClose}
-            title="關閉"
-          >
-            <Icon name="x" size={14} />
-          </button>
         </div>
 
         <div className="mt-4 space-y-3 text-[13px]">
@@ -76,7 +76,7 @@ export function ViewDialog(props: { item: LocalKey; onClose: () => void; onEdit:
             ) : (
               <>
                 <p className="mb-2 text-fg/40">簽發後仍可隨時查看明文（本機存儲）。</p>
-                {err && <p className="mb-2 text-red-400">{err}</p>}
+                {err && <p className="mb-2 text-xs text-(--mac-red)">{err}</p>}
                 <button
                   className="btn-ghost flex items-center gap-1.5 px-3 py-1.5 text-xs disabled:opacity-40"
                   disabled={loading}

@@ -146,13 +146,13 @@ export function ChannelPricingForm(props: {
               modelNorm={model.trim()}
             />
           ) : (
-            <p className="text-[11px] text-amber-400">
+            <p className="text-[11px] text-(--mac-amber)">
               請先填寫上方模型 ID（`*` 表示該來源預設）
             </p>
           )}
         </div>
       )}
-      {err && <p className="pt-1 text-xs text-red-400">{err}</p>}
+      {err && <p className="mt-2 text-xs text-(--mac-red)">{err}</p>}
       <div className="flex justify-end gap-2 pt-2.5">
         <button
           className="btn-ghost px-4 py-1.5 text-xs"
@@ -266,7 +266,7 @@ export function PeriodManager(props: { providerId: number; modelNorm: string }) 
                 <Icon name="pencil" size={12} />
               </button>
               <button
-                className="shrink-0 rounded-full p-1 text-fg/40 transition-colors hover:bg-red-500/10 hover:text-red-400"
+                className="shrink-0 rounded-full p-1 text-fg/40 transition-colors hover:bg-red-500/10 hover:text-(--mac-red)"
                 title="刪除時段"
                 onClick={() => ask(`刪除時段 ${p.name}？`, () => del.mutate(p.id))}
               >
@@ -337,7 +337,7 @@ export function PeriodManager(props: { providerId: number; modelNorm: string }) 
               />
             </div>
           ))}
-          {err && <p className="pt-1 text-[11px] text-red-400">{err}</p>}
+          {err && <p className="mt-2 text-[11px] text-(--mac-red)">{err}</p>}
           <div className="flex justify-end gap-1.5 pt-2">
             <button
               className="btn-ghost px-3 py-1 text-xs"

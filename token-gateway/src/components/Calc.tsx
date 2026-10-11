@@ -338,7 +338,7 @@ export default function CalcPage() {
         </div>
       </div>
 
-      {err && <p className="text-xs text-red-400">{err}</p>}
+      {err && <p className="text-xs text-(--mac-red)">{err}</p>}
       <div className="flex items-center gap-2">
         <button
           className="btn-primary px-5 py-2 text-sm disabled:opacity-40"

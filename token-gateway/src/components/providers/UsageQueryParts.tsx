@@ -28,7 +28,7 @@ export function UsageQuerySpecAdvanced(props: {
           value={spec}
           onChange={(e) => setSpec(e.target.value)}
         />
-        {specErr && <p className="text-[11px] text-red-400">{specErr}</p>}
+        {specErr && <p className="text-[11px] text-(--mac-red)">{specErr}</p>}
         <p className="text-[11px] leading-relaxed text-fg/25">
           路徑用點分隔、數字段是陣列索引（例如
           <span className="font-mono"> balance_infos.0.total_balance</span>）；
@@ -88,8 +88,8 @@ export function UsageQueryTestResult(props: {
           className="rounded px-1.5 py-px text-[11px]"
           style={
             test.ok
-              ? { background: "rgba(48,209,88,0.14)", color: "#30d158" }
-              : { background: "rgba(255,69,58,0.16)", color: "#ff6961" }
+              ? { background: "rgba(48,209,88,0.14)", color: "var(--mac-green)" }
+              : { background: "rgba(255,69,58,0.16)", color: "var(--mac-red)" }
           }
         >
           {test.ok ? "成功" : "失敗"}

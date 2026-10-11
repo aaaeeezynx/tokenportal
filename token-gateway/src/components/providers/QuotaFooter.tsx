@@ -14,9 +14,9 @@ import { Icon } from "../icons";
 /** 用量百分比 → 顏色（cc-switch 的三段式）。 */
 export function quotaColor(percent: number | null): string {
   if (percent === null) return "#8e8e93";
-  if (percent >= 90) return "#ff453a";
-  if (percent >= 70) return "#ff9f0a";
-  return "#30d158";
+  if (percent >= 90) return "var(--mac-red)";
+  if (percent >= 70) return "var(--mac-orange)";
+  return "var(--mac-green)";
 }
 
 /** 數字顯示：大數字不留一堆小數。 */
@@ -64,7 +64,7 @@ export function QuotaFooter(props: {
             {q.percent !== null && (
               <span
                 className="rounded px-1.5 py-px text-[11px] font-medium tabular-nums"
-                style={{ background: `${col}22`, color: col }}
+                style={{ background: `color-mix(in srgb, ${col} 13%, transparent)`, color: col }}
                 title="用量百分比（<70% 綠 / 70–89% 橘 / ≥90% 紅）"
               >
                 {q.percent < 10 ? q.percent.toFixed(1) : Math.round(q.percent)}%
@@ -90,7 +90,7 @@ export function QuotaFooter(props: {
             )}
           </>
         ) : (
-          <span className="min-w-0 flex-1 truncate text-[11px] text-amber-300/80" title={q.message}>
+          <span className="min-w-0 flex-1 truncate text-[11px] text-(--mac-amber)" title={q.message}>
             {q.message || "查不到用量"}
           </span>
         )}

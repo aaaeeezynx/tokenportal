@@ -101,26 +101,6 @@
   }
 }
 
-.mac-side-item {
-  color: var(--mac-label-2);
-  border: 1px solid transparent;
-  border-radius: 8px;
-  transition: background var(--mac-duration) var(--mac-ease), color var(--mac-duration) var(--mac-ease), border-color var(--mac-duration) var(--mac-ease), box-shadow var(--mac-duration) var(--mac-ease);
-}
-.mac-side-item:hover {
-  background: rgb(var(--app-fg-rgb) / 0.06);
-  color: var(--mac-label);
-}
-/* 選中：輪廓式（描邊＋外發光＋accent 圖標，10% 底）— 全站統一基準 */
-.mac-side-item[data-active="true"] {
-  background: var(--mac-selected-bg);
-  border-color: var(--mac-selected-border);
-  box-shadow: var(--mac-selected-shadow);
-  color: #fff;
-}
-.mac-side-item[data-active="true"] .mac-side-icon {
-  color: var(--mac-accent);
-}
 /* 可選卡片（來源列表等）：與側欄同一語言 */
 .sel-card[data-active="true"] {
   background: var(--mac-selected-bg);

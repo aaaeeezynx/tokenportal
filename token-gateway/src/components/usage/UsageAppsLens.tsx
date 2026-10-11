@@ -109,7 +109,7 @@ export function AppsLens(props: {
       {/* 整體摘要：一律取自後端 summary，避免與各列平均產生矛盾 */}
       {s && (
         <div className="glass min-w-0 p-4">
-          <div className="mb-2.5 text-sm font-semibold tracking-tight text-fg/80">
+          <div className="mb-3 text-sm font-semibold tracking-tight text-fg/80">
             全部工具合計
           </div>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">

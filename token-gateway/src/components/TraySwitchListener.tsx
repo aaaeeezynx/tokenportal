@@ -87,7 +87,7 @@ export function TraySwitchListener() {
         <Icon
           name={err ? "alert" : "check"}
           size={14}
-          className={err ? "mt-0.5 text-red-400" : "mt-0.5 text-emerald-400"}
+          className={err ? "mt-0.5 text-(--mac-red)" : "mt-0.5 text-(--mac-green)"}
         />
         <div className="min-w-0 flex-1 text-[12px] leading-relaxed break-words text-fg/75">
           {err || msg}

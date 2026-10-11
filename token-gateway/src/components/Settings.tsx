@@ -128,7 +128,7 @@ export default function SettingsPage() {
                 <span className="text-xs text-fg/40">{t("settings.gateway.autostart.hint")}</span>
               </div>
             </div>
-            {msg && <p className="pt-1.5 text-xs text-fg/50">{msg}</p>}
+            {msg && <p className="mt-2 text-xs text-fg/50">{msg}</p>}
             <p className="pt-1.5 text-[11px] text-fg/25">
               {t("settings.gateway.hint")}
             </p>
@@ -180,7 +180,7 @@ export default function SettingsPage() {
             {exporting ? t("settings.export.working") : t("settings.export.csv")}
           </button>
         </div>
-        {csvMsg && <p className="pt-1.5 text-xs text-fg/50">{csvMsg}</p>}
+        {csvMsg && <p className="mt-2 text-xs text-fg/50">{csvMsg}</p>}
       </div>
 
       {/* ── 關於 ── */}

@@ -79,13 +79,13 @@ export function HistoryImportDialog(props: { onClose: () => void }) {
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex items-center justify-center glass-backdrop p-4 transition-opacity duration-200 ${closing ? "opacity-0" : ""}`}
+      className={`fixed inset-0 z-50 flex justify-center overflow-y-auto glass-backdrop p-4 transition-opacity duration-200 ${closing ? "opacity-0" : ""}`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) requestClose();
       }}
     >
-      <div className={`w-full max-w-lg glass-panel p-5 ${closing ? "sheet-out" : "pop-in"}`}>
-        <div className="mb-1 text-sm font-medium text-fg/80">歷史回填</div>
+      <div className={`my-auto w-full max-w-lg glass-panel p-5 ${closing ? "sheet-out" : "pop-in"}`}>
+        <div className="mb-1 text-[15px] font-semibold tracking-tight text-fg">歷史回填</div>
         <p className="mb-3 text-xs text-fg/30">
           離線解析本機會話（Claude / Codex / OpenCode / DeepSeek Harness），寫入用量統計。
           已回填過的不重複；與網關日誌疑似重複的自動跳過；費用按當前定價快照計算。
@@ -94,7 +94,7 @@ export function HistoryImportDialog(props: { onClose: () => void }) {
           <p className="text-sm text-fg/30">掃描本機文件中…</p>
         )}
         {scan.isError && (
-          <p className="text-sm text-red-400">掃描失敗</p>
+          <p className="text-sm text-(--mac-red)">掃描失敗</p>
         )}
         {tools.map((t) => (
           <label
@@ -174,7 +174,7 @@ export function RecentLogs() {
   if (logs.isPending)
     return <p className="text-sm text-fg/30">載入中…</p>;
   if (logs.isError)
-    return <p className="text-sm text-red-400">日誌載入失敗</p>;
+    return <p className="text-sm text-(--mac-red)">日誌載入失敗</p>;
   if (logs.data.length === 0)
     return (
       <p className="text-sm text-fg/20">
@@ -225,7 +225,7 @@ export function RecentLogs() {
                   <Logo name={l.app} size={13} className="shrink-0 opacity-80" />
                   {appLabel(l.app)}
                   {l.is_stream ? (
-                    <Icon name="bolt-fill" size={11} className="text-[#ffd60a]" />
+                    <Icon name="bolt-fill" size={11} className="text-(--mac-amber)" />
                   ) : null}
                 </span>
               </td>
@@ -244,8 +244,8 @@ export function RecentLogs() {
               <td
                 className={`py-2 pr-2 text-right whitespace-nowrap ${
                   l.status >= 200 && l.status < 300
-                    ? "text-[#30d158]"
-                    : "text-red-400"
+                    ? "text-(--mac-green)"
+                    : "text-(--mac-red)"
                 }`}
               >
                 {l.status}

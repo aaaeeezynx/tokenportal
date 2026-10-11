@@ -5,11 +5,11 @@ export function StatusBadge({ status }: { status: number }) {
   if (!status) {
     return <span className="font-mono text-[11px] text-fg/30">—</span>;
   }
-  const c = status < 400 ? "#30d158" : status < 500 ? "#ffd60a" : "#ff6961";
+  const c = status < 400 ? "var(--mac-green)" : status < 500 ? "var(--mac-amber)" : "var(--mac-red)";
   return (
     <span
       className="rounded px-1.5 py-px font-mono text-[11px] font-semibold"
-      style={{ background: `${c}22`, color: c }}
+      style={{ background: `color-mix(in srgb, ${c} 13%, transparent)`, color: c }}
     >
       {status}
     </span>

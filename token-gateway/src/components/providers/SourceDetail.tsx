@@ -23,7 +23,7 @@ export function SourceDetail(props: {
   if (!sel) return null;
   return (
     <div key={sel.id} className="glass anim-rise p-5">
-      <div className="mb-4 flex flex-wrap items-center gap-2.5">
+      <div className="mb-3 flex flex-wrap items-center gap-2.5">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-fg/[0.06] text-fg/70">
           <Icon name="server" size={18} />
         </span>

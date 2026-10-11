@@ -150,8 +150,8 @@ export function QuotaCard(props: { q: SubscriptionQuota; now: number }) {
   // 名稱去掉括號說明（如「OpenCode Go（opencode-go）」→「OpenCode Go」）
   const title = q.title.replace(/[（(][^（）()]*[）)]/g, "").trim() || q.title;
   return (
-    <div className="glass-float float-hover anim-rise w-fit max-w-full min-w-0 p-4">
-      <div className="mb-2 flex min-w-0 items-center gap-2">
+    <div className="glass-float float-hover anim-rise min-w-0 max-w-full p-4">
+      <div className="mb-3 flex min-w-0 items-center gap-2">
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-fg/85">
           {title}
         </span>
@@ -245,7 +245,7 @@ export function QuotaSection() {
         </span>
         <span
           className={`min-w-0 flex-1 truncate text-[11px] ${
-            expired ? "text-amber-300/80" : "text-fg/25"
+            expired ? "text-(--mac-amber)" : "text-fg/25"
           }`}
           title={
             expired
@@ -271,7 +271,7 @@ export function QuotaSection() {
       {q.isPending ? (
         <p className="text-sm text-fg/30">查詢中…</p>
       ) : (
-        <div className="flex min-w-0 flex-wrap items-start gap-3">
+        <div className="grid min-w-0 gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr))]">
           {list.map((x) => (
             <QuotaCard key={x.key} q={x} now={now} />
           ))}

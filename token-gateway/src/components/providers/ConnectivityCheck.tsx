@@ -47,8 +47,8 @@ export function ConnectivityCheck(props: { baseUrl: string }) {
               className="rounded px-1.5 py-px"
               style={
                 res.reachable
-                  ? { background: "rgba(48,209,88,0.14)", color: "#30d158" }
-                  : { background: "rgba(255,69,58,0.16)", color: "#ff6961" }
+                  ? { background: "rgba(48,209,88,0.14)", color: "var(--mac-green)" }
+                  : { background: "rgba(255,69,58,0.16)", color: "var(--mac-red)" }
               }
             >
               {res.reachable ? "可達" : "連不上"}
@@ -57,7 +57,7 @@ export function ConnectivityCheck(props: { baseUrl: string }) {
             <span className="text-fg/25">{res.latency_ms} ms</span>
           </span>
         )}
-        {err && <span className="text-[11px] text-red-400">{err}</span>}
+        {err && <span className="text-[11px] text-(--mac-red)">{err}</span>}
       </div>
 
       {res && (

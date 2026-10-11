@@ -192,7 +192,7 @@ export function ContributionGrid(props: {
 
   return (
     <div className="glass relative min-w-0 p-4" ref={rootRef}>
-      <div className="mb-2.5 flex min-w-0 flex-wrap items-center gap-2">
+      <div className="mb-3 flex min-w-0 flex-wrap items-center gap-2">
         <div className="shrink-0 text-sm font-semibold tracking-tight text-fg/80">
           用量日曆
         </div>
@@ -201,7 +201,7 @@ export function ContributionGrid(props: {
         </span>
         <span className="flex-1" />
       </div>
-      <div className="mb-2.5">
+      <div className="mb-3">
         <Segmented
           className="w-full"
           value={props.range}

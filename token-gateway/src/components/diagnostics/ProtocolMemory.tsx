@@ -42,7 +42,7 @@ export function ProtocolMemory({ list }: { list: LearnedProtocol[] }) {
             <span className="text-fg/30">→</span>
             <span
               className="rounded px-1.5 py-px font-mono text-[11px]"
-              style={{ background: "rgba(48,209,88,0.14)", color: "#30d158" }}
+              style={{ background: "rgba(48,209,88,0.14)", color: "var(--mac-green)" }}
             >
               {p.actual_format}
             </span>

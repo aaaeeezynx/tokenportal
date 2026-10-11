@@ -232,7 +232,7 @@ export function AppearanceSection() {
           {appearance.data.autostart_command}
         </p>
       )}
-      {autoMsg && <p className="pt-1 text-[11px] text-emerald-400/80">{autoMsg}</p>}
+      {autoMsg && <p className="mt-2 text-[11px] text-(--mac-green)">{autoMsg}</p>}
 
       {/* 關閉視窗時的行為（P4.7）：cc-switch 預設縮到系統匣 */}
       <div className="mac-frow">
@@ -272,7 +272,7 @@ export function AppearanceSection() {
           </span>
         </div>
       </div>
-      {winMsg && <p className="pt-1 text-[11px] text-emerald-400/80">{winMsg}</p>}
+      {winMsg && <p className="mt-2 text-[11px] text-(--mac-green)">{winMsg}</p>}
     </div>
   );
 }

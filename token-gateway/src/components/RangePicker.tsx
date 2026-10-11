@@ -184,7 +184,7 @@ export function RangePicker(props: {
                 onChange={(e) => setDraftEnd(e.target.value)}
               />
             </label>
-            {err && <p className="mb-2 text-xs text-red-400">{err}</p>}
+            {err && <p className="mb-2 text-xs text-(--mac-red)">{err}</p>}
             <div className="flex justify-end gap-2">
               <button
                 className="btn-ghost px-3.5 py-1.5 text-xs"

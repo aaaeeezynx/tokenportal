@@ -119,7 +119,6 @@ body,
     "SF Pro Display", "SF Pro Text", "Inter", -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, "PingFang TC", "Microsoft JhengHei", sans-serif;
   -webkit-font-smoothing: antialiased;
-  font-feature-settings: "tnum" 0;
 }
 
 html {

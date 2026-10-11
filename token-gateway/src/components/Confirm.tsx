@@ -31,18 +31,18 @@ export function ConfirmDialog(props: {
 
   return createPortal(
     <div
-      className={`fixed inset-0 z-[110] flex items-center justify-center glass-backdrop p-4 transition-opacity duration-200 ${closing ? "opacity-0" : ""}`}
+      className={`fixed inset-0 z-[110] flex justify-center overflow-y-auto glass-backdrop p-4 transition-opacity duration-200 ${closing ? "opacity-0" : ""}`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) close();
       }}
     >
       <div
-        className={`w-full max-w-sm glass-panel p-5 ${closing ? "sheet-out" : "pop-in"}`}
+        className={`my-auto w-full max-w-sm glass-panel p-5 ${closing ? "sheet-out" : "pop-in"}`}
       >
         <div className="flex items-start gap-3">
           <span
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
-            style={{ background: "rgba(255,69,58,0.14)", color: "#ff6961" }}
+            style={{ background: "rgba(255,69,58,0.14)", color: "var(--mac-red)" }}
           >
             <Icon name="alert" size={18} />
           </span>

@@ -93,7 +93,7 @@ export function ModelWhitelist(props: {
               type="button"
               title="移除"
               onClick={() => toggle(v)}
-              className="flex max-w-full items-center gap-1.5 rounded-full bg-fg/[0.07] px-2.5 py-[3px] font-mono text-[11px] text-fg/70 transition-colors hover:bg-red-500/15 hover:text-red-300"
+              className="flex max-w-full items-center gap-1.5 rounded-full bg-fg/[0.07] px-2.5 py-[3px] font-mono text-[11px] text-fg/70 transition-colors hover:bg-red-500/15 hover:text-(--mac-red)"
             >
               <span className="truncate">{v}</span>
               <Icon name="x" size={10} className="shrink-0 text-fg/40" />
@@ -128,7 +128,7 @@ export function ModelWhitelist(props: {
             </span>
           </div>
 
-          {msg && <p className="text-[11px] text-amber-300/80">{msg}</p>}
+          {msg && <p className="text-[11px] text-(--mac-amber)">{msg}</p>}
 
           {avail.length > 0 && (
             <>

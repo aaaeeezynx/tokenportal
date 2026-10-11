@@ -78,7 +78,7 @@ export function SwitchDialog(props: SwitchDialogProps) {
       >
         <div className="mb-4 flex items-center gap-2">
           <button
-            className="rounded-full bg-fg/[0.055] p-1.5 text-fg/60 transition-colors hover:bg-fg/10 hover:text-fg"
+            className="rounded-full bg-fg/[0.06] p-1.5 text-fg/55 transition-colors hover:bg-fg/[0.1] hover:text-fg"
             onClick={requestClose}
             title="關閉"
           >
@@ -204,7 +204,7 @@ export function SwitchDialog(props: SwitchDialogProps) {
                   })),
                 ]}
               />
-              {keyMsg && <p className="mt-1 text-xs text-amber-400">{keyMsg}</p>}
+              {keyMsg && <p className="mt-1 text-xs text-(--mac-amber)">{keyMsg}</p>}
               <p className="mt-1 text-[11px] text-fg/30">
                 {pickedKey
                     ? "經網關時以本地 Key 計量與限流；開關關閉則還原接管前配置並切回原生來源。"
@@ -243,7 +243,7 @@ export function SwitchDialog(props: SwitchDialogProps) {
             <div className="text-xs">
               {plan.isPending && <p className="text-fg/30">正在生成方案…</p>}
               {plan.isError && (
-                <p className="text-red-400">{String(plan.error)}</p>
+                <p className="text-(--mac-red)">{String(plan.error)}</p>
               )}
               {plan.data && (
                 <div className="space-y-2">
@@ -269,7 +269,7 @@ export function SwitchDialog(props: SwitchDialogProps) {
                   )}
                   {plan.data.env_setup.map((e) => (
                     <div key={e} className="flex items-start gap-2">
-                      <p className="flex-1 break-all font-mono text-amber-300">{e}</p>
+                      <p className="flex-1 break-all font-mono text-(--mac-amber)">{e}</p>
                       <button
                         className="btn-ghost shrink-0 rounded-md px-2 py-0.5 text-xs"
                         onClick={() => copyText(e)}
@@ -279,7 +279,7 @@ export function SwitchDialog(props: SwitchDialogProps) {
                     </div>
                   ))}
                   {plan.data.warnings.map((w) => (
-                    <p key={w} className="flex items-start gap-1.5 text-amber-400">
+                    <p key={w} className="flex items-start gap-1.5 text-(--mac-amber)">
                       <Icon name="alert" size={13} className="mt-0.5 shrink-0" />
                       {w}
                     </p>
@@ -288,7 +288,7 @@ export function SwitchDialog(props: SwitchDialogProps) {
               )}
             </div>
             {result && (
-              <p className="break-all whitespace-pre-wrap text-xs text-[#30d158]">
+              <p className="break-all whitespace-pre-wrap text-xs text-(--mac-green)">
                 {result}
               </p>
             )}

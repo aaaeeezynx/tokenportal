@@ -110,7 +110,7 @@ export function PopSelect(props: {
   return (
     <div className={props.className ?? ""}>
       {props.label && (
-        <div className="mb-1 text-[11px] font-medium text-fg/40">
+        <div className="mb-1 text-[11px] font-semibold tracking-wider text-fg/40 uppercase">
           {props.label}
         </div>
       )}

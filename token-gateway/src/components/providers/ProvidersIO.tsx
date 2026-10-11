@@ -108,22 +108,20 @@ export function ProvidersIO(props: { count: number }) {
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          className="btn-ghost flex items-center gap-1.5 px-4 py-1.5 text-sm"
-          onClick={() => {
-            setOpen(true);
-            setReport(null);
-            setErr("");
-            setMsg("");
-          }}
-        >
-          <Icon name="switch" size={13} />
-          匯入／匯出
-        </button>
-        {msg && <span className="text-xs text-emerald-400/80">{msg}</span>}
-        {err && <span className="break-all text-xs text-red-400">{err}</span>}
-      </div>
+      <button
+        className="btn-ghost flex items-center gap-1.5 px-4 py-1.5 text-sm"
+        onClick={() => {
+          setOpen(true);
+          setReport(null);
+          setErr("");
+          setMsg("");
+        }}
+      >
+        <Icon name="switch" size={13} />
+        匯入／匯出
+      </button>
+      {msg && <span className="text-xs text-(--mac-green)">{msg}</span>}
+      {err && <span className="break-all text-xs text-(--mac-red)">{err}</span>}
 
       {open && (
         <div
@@ -164,7 +162,7 @@ export function ProvidersIO(props: { count: number }) {
                   />
                 </div>
                 {includeKeys && (
-                  <p className="text-[11px] leading-relaxed text-amber-300/80">
+                  <p className="text-[11px] leading-relaxed text-(--mac-amber)">
                     ⚠︎ 金鑰會以明碼寫進匯出檔。只在你信任這個檔案存放位置時才打開。
                   </p>
                 )}
@@ -272,7 +270,7 @@ export function ProvidersIO(props: { count: number }) {
                 <div className="rounded-lg bg-fg/[0.04] px-3 py-2.5 text-xs leading-relaxed text-fg/70">
                   <div className="font-medium text-fg/85">匯入完成</div>
                   <div className="pt-1">
-                    新增 <span className="text-emerald-400">{report.added}</span> 個來源
+                    新增 <span className="text-(--mac-green)">{report.added}</span> 個來源
                     （模型 {report.models}、價格 {report.pricing}、時段 {report.periods}）、
                     跳過 <span className="text-fg/50">{report.skipped}</span> 個已存在
                   </div>
@@ -282,7 +280,7 @@ export function ProvidersIO(props: { count: number }) {
                     </div>
                   )}
                   {report.includes_keys && (
-                    <div className="pt-1 text-amber-300/85">
+                    <div className="pt-1 text-(--mac-amber)">
                       ⚠︎ 這個檔案帶有明碼金鑰，已一併寫入資料庫。
                     </div>
                   )}
@@ -290,7 +288,7 @@ export function ProvidersIO(props: { count: number }) {
               )}
 
               {err && (
-                <div className="rounded-lg border border-red-500/20 bg-red-500/[0.05] px-3 py-2 text-xs text-red-400">
+                <div className="rounded-lg border border-red-500/20 bg-red-500/[0.05] px-3 py-2 text-xs text-(--mac-red)">
                   {err}
                 </div>
               )}

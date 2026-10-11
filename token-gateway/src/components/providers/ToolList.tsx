@@ -37,7 +37,7 @@ export function ToolList(props: {
     <>
       {isPending && <p className="text-sm text-fg/30">檢測中…</p>}
       {props.error != null && (
-        <p className="text-sm text-red-400">檢測失敗：{String(error)}</p>
+        <p className="text-sm text-(--mac-red)">檢測失敗：{String(error)}</p>
       )}
       <div className="space-y-2">
         {tools.map((t, i) => (
@@ -56,7 +56,7 @@ export function ToolList(props: {
                   <span className="shrink-0 text-xs text-fg/20">未安裝</span>
                 )}
                 {t.gateway_active && (
-                  <span className="shrink-0 rounded-full bg-[#30d158]/10 px-2.5 py-0.5 text-[10px] font-medium text-[#30d158]">
+                  <span className="shrink-0 rounded-full bg-(--mac-green)/10 px-2.5 py-0.5 text-[10px] font-medium text-(--mac-green)">
                     網關接管中
                   </span>
                 )}
@@ -86,7 +86,7 @@ export function ToolList(props: {
               </>
             )}
             {rowErr?.app === t.app && (
-              <p className="mt-1.5 break-all text-xs text-red-400">{rowErr.msg}</p>
+              <p className="mt-1.5 break-all text-xs text-(--mac-red)">{rowErr.msg}</p>
             )}
             {rowMsg?.app === t.app && (
               <p className="mt-1.5 break-all text-xs text-fg/45">{rowMsg.msg}</p>
@@ -107,12 +107,12 @@ export function ToolList(props: {
                         key={i}
                         className={
                           l.startsWith("❌")
-                            ? "text-red-400"
+                            ? "text-(--mac-red)"
                             : l.startsWith("⚠️")
-                              ? "text-amber-300/90"
+                              ? "text-(--mac-amber)"
                               : l.startsWith("ℹ️")
                                 ? "text-fg/50"
-                                : "text-[#30d158]/80"
+                                : "text-(--mac-green)/80"
                         }
                       >
                         {l}

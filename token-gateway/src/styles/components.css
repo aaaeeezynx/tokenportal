@@ -224,6 +224,11 @@ input[type="password"] {
 .mac-cap {
   font-size: 11px;
   color: var(--mac-label-3);
+  /* 長標籤保底（.mac-frow 固定 108px 欄）：收斂為省略號，不把欄位撐開也不換行 */
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* ====== RWD（第一階段：殼＋通用，目標 768） ====== */
 @media (max-width: 560px) {
