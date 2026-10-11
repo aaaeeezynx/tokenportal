@@ -91,14 +91,14 @@ Token Toll 在本機 (`127.0.0.1`) 開一個 OpenAI／Anthropic／Gemini 兼容�
 
 ### 上游來源 · Providers
 
-- **5 種介面格式**：`openai-chat`、`openai-responses`、`mixed`、`anthropic`、`gemini`（相容性矩陣見下）
+- **6 種介面格式**：`auto`（新來源預設，逐模型偵測＋自動換手）、`openai-chat`、`openai-responses`、`mixed`、`anthropic`、`gemini`（相容性矩陣見下）
 - **3 種鑑權**：`bearer`、`goog-key`、`anthropic`
 - **38 組來源預設集**：`base_url` 逐筆實測過（對 `{base_url}/models` 送不帶金鑰的 GET，只有 DNS 失敗／逾時／410 才淘汰；Ollama／LM Studio 兩個本機服務因未安裝而**未實測**，備註欄如實標示）
 - **模型映射 ＋ 四率定價**：輸入／輸出／快取讀／快取建，另支援**時段定價**與**訂閱費抵扣**
 - **一鍵取得模型清單**：直接對上游抓 `/models`（不在預設裡猜模型名——猜錯比不填更糟）
 - **來源連線檢查**與健康度（連續失敗的來源會被排到候選佇列最後，但一個都不丟）
 
-- **Upstream management**: 5 API formats, 3 auth schemes, 38 empirically-verified presets, model mapping + 4-rate pricing, time-window pricing and subscription-fee offsets
+- **Upstream management**: 6 API formats (new sources default to `auto` with per-model detection), 3 auth schemes, 38 empirically-verified presets, model mapping + 4-rate pricing, time-window pricing and subscription-fee offsets
 
 ### 本地 Key · Keys
 
@@ -158,8 +158,8 @@ macOS 27 風格的介面：Liquid Glass、深／淺／跟隨系統三種主題�
 
 | 客戶端 ↓ ＼ 渠道格式 → | `openai-chat` | `openai-responses` | `mixed` | `anthropic` | `gemini` |
 |---|---|---|---|---|---|
-| **OpenAI Chat** | ✅ 直通 | ❌ 明確拒絕 | ✅ 直通 | ❌ 未實現 | ❌ 只收 Gemini |
-| **Responses**（Codex） | ✅ 自動翻譯 | ✅ 直通 | ✅ 直通 | ❌ 未實現 | ❌ |
+| **OpenAI Chat** | ✅ 直通 | ❌ 明確拒絕 | ✅ 直通 | ✅ 自動翻譯 | ❌ 只收 Gemini |
+| **Responses**（Codex） | ✅ 自動翻譯 | ✅ 直通 | ✅ 直通 | ✅ 自動翻譯（兩跳） | ❌ |
 | **Anthropic**（Claude Code） | ✅ 自動翻譯 | ❌ | ✅ 自動翻譯 | ✅ 直通 | ❌ |
 | **Gemini 原生** | ❌ | ❌ | ❌ | ❌ | ✅ 直通 |
 
@@ -178,7 +178,7 @@ macOS 27 風格的介面：Liquid Glass、深／淺／跟隨系統三種主題�
 ### 其他限制
 
 - **`gemini` 渠道是雙向鎖死的**：Gemini 原生請求只能走 gemini 渠道，gemini 渠道也只收 Gemini 原生——不能拿它餵 Claude Code 或 Codex
-- **`anthropic` 渠道幾乎專用於 Claude Code**：Codex（Responses）打過去會得到「反向轉換尚未實現」
+- **`anthropic` 渠道三向通行**：Claude Code 直通；OpenAI Chat 與 Codex（Responses）經自動翻譯使用（v0.1.2 補上）。反向缺口只剩 Anthropic 入站 → Responses 渠道
 - **`openai-responses` 渠道會明確拒絕 chat 請求**（而非靜默失敗）
 
 ---
@@ -201,24 +201,41 @@ macOS 27 風格的介面：Liquid Glass、深／淺／跟隨系統三種主題�
 
 ## 下載 · Download
 
-### 最新版本 · v0.1.1
+### 最新版本 · v0.1.2
 
 **[⬇ 前往 Releases 頁下載](https://github.com/aaaeeezynx/tokentoll/releases/latest)**
 
 | 檔案 | 大小 | 說明 |
 |---|---|---|
-| [`Token Toll_0.1.1_x64-setup.exe`](https://github.com/aaaeeezynx/tokentoll/releases/download/v0.1.1/Token.Toll_0.1.1_x64-setup.exe) | 3.9 MB | **NSIS 安裝包（推薦）**，雙擊安裝 |
-| [`Token Toll_0.1.1_x64_en-US.msi`](https://github.com/aaaeeezynx/tokentoll/releases/download/v0.1.1/Token.Toll_0.1.1_x64_en-US.msi) | 8.2 MB | MSI 安裝包，適合企業佈署 |
+| [`Token Toll_0.1.2_x64-setup.exe`](https://github.com/aaaeeezynx/tokentoll/releases/download/v0.1.2/Token.Toll_0.1.2_x64-setup.exe) | 4.0 MB | **NSIS 安裝包（推薦）**，雙擊安裝 |
+| [`Token Toll_0.1.2_x64_en-US.msi`](https://github.com/aaaeeezynx/tokentoll/releases/download/v0.1.2/Token.Toll_0.1.2_x64_en-US.msi) | 8.4 MB | MSI 安裝包，適合企業佈署 |
 
-> 版本號 `0.1.1` 在 `Cargo.toml`／`tauri.conf.json`／`package.json` 三者一致。
+> 版本號 `0.1.2` 在 `Cargo.toml`／`tauri.conf.json`／`package.json` 三者一致。
 
 **系統需求**：Windows 10 1809+ / Windows 11（x64）· WebView2 Runtime（Win10／11 一般自帶）
 
 > **未簽名版本**：SmartScreen 會提示「未知的發行者」，選「仍要執行」即可。
 > 想自行核對檔案完整性，SHA256 校驗碼寫在 Release 說明裡。
 
-> **Latest release: v0.1.1.** Unsigned build: SmartScreen will warn about an
+> **Latest release: v0.1.2.** Unsigned build: SmartScreen will warn about an
 > unknown publisher — choose "Run anyway". Requires WebView2 Runtime.
+
+---
+
+## v0.1.2 更新 · What's new
+
+### 網關 · Gateway
+
+- **相容性矩陣補全——OpenAI 系客戶端可用 Anthropic 上游**：`anthropic` 渠道從「幾乎只能給 Claude Code」變成三向通行。OpenAI Chat 與 Codex（Responses）客戶端經自動翻譯使用（Responses 側兩跳），附完整 e2e 與反向翻譯測試。Anthropic 的思考區塊刻意不外傳（避免上游回「找不到 reasoning item」）。
+- **新來源預設 `auto`——同一訂閱逐模型混用協議**：實測訂閱制上游同一把金鑰下，`claude-haiku-5-5` 只吃 Anthropic Messages、其餘模型吃 OpenAI chat。來源格式 `auto` 依逐模型偵測結果換手（鏈：`openai-chat` → `openai-responses` → `anthropic`），不再被迫把一個訂閱拆成兩個來源（金鑰重複、統計被切碎）。
+- **模型協議與思考強度實測**：來源的模型清單可逐模型或一鍵實測「走哪個協議、支援哪些思考檔位」（會對上游發真正的請求），結果落庫——協議寫入既有記憶表、強度帶入模型目錄，重啟不遺忘。
+
+### 介面 · UI
+
+- **21 項版面修復**：上游來源頁工具列上下間距對稱（按鈕不再貼死卡片）；全站標題／工具列下間距統一 12px；對話框關閉鈕統一在左、內容超高時頂部可達；統計卡與區塊標題各合併為全站唯一元件；統計數值放不下時自動縮字號、不再截斷；訂閱額度卡片等寬排列；側欄品牌塊與導航圖示對齊；窄視窗（<768px）下頂欄與內容左緣對齊；捲動條出現時內容不再位移。
+- **等寬數字修復**：移除全局 tnum 禁用，26 處 `tabular-nums` 真正生效——數字表格列對齊、輪環百分比更新不再左右抖動。
+- **警示色全面 token 化**：錯誤／警告／成功統一為 `--mac-red`／`--mac-amber`／`--mac-green`，深淺主題自動切換；**淺色主題下警示文字對比全面達 WCAG AA**（此前幾乎不可讀）。
+- 拖拽排序指示線跟隨強調色（原硬編碼藍色）。
 
 ---
 
@@ -325,7 +342,7 @@ pnpm tauri build    # 打包 · packaging
 - **僅 Windows x64**：協定註冊、接管路徑、打包都針對 Windows
 - **未簽章**：沒有程式碼簽章憑證，安裝時 SmartScreen 會警告
 - **i18n 覆蓋率約 15%**：導覽列與設定頁 100%，其餘頁面切英文時仍是繁中
-- **格式矩陣有硬性缺口**：詳見上方相容性矩陣——`gemini` 渠道雙向鎖死、`anthropic` 渠道只能給 Claude Code 用、OpenAI→Anthropic 的反向翻譯尚未實現
+- **格式矩陣剩餘缺口**：詳見上方相容性矩陣——`gemini` 渠道雙向鎖死；Anthropic 入站（Claude Code）→ Responses 渠道尚未實現（OpenAI 系 → Anthropic 已於 v0.1.2 補上）
 - **`mixed` 首次請求要多付一次 400 探測**（之後落庫，重啟不遺忘）
 - **S3 不支援**：上游來源只做 WebDAV／S3 以外的直連；雲端同步功能已於 2026-10-02 移除
 - **無 ARM64／macOS／Linux 建置**
@@ -336,7 +353,7 @@ pnpm tauri build    # 打包 · packaging
 
 | 指標 | 值 |
 |---|---|
-| 版本 | `0.1.1` |
+| 版本 | `0.1.2` |
 | Schema | **v15** |
 | 測試 | **329 passed / 0 failed / 10 ignored** |
 | Clippy | 0 warning（`-D warnings`） |
