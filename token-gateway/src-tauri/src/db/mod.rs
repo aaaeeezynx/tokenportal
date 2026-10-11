@@ -51,7 +51,14 @@ pub(crate) use settings::*;
 /// 「這個模型的這個思考強度上游收不收」。純新增表，無需 ALTER。
 /// 動機：上游不公開支援哪些 reasoning_effort，送錯只回泛用的 400
 /// `Invalid request parameters`，所以只能實測並記下來。
-pub const SCHEMA_VERSION: i32 = 16;
+/// v17（2026-10-10）：`provider_models` 補上逐模型 `protocol` 欄位（舊庫 ALTER 補列）。
+///
+/// 動機：**協議是「某個模型在某個上游」的屬性，不是「來源」的屬性。**
+/// 訂閱制的上游（實測 opencode-go）單一 base_url、單一金鑰底下，
+/// `claude-haiku-5-5` 只吃 Anthropic Messages，其餘模型吃 OpenAI chat。
+/// 來源級的 `api_format` 描述不了，使用者只能把同一個訂閱拆成兩個來源 ——
+/// 金鑰重複，而且 App 的用量／成本／健康度統計被切碎（上游那邊本來只有一份額度）。
+pub const SCHEMA_VERSION: i32 = 17;
 
 /// 網關預設連接埠（C 方案：可在設定中修改；歷史預設 15721 與 cc-switch 衝突）。
 pub const DEFAULT_GATEWAY_PORT: u16 = 15722;

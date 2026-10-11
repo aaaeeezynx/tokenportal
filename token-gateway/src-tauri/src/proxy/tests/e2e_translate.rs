@@ -21,3 +21,6 @@
     mod custom_tool;
     #[path = "e2e_translate/anthropic.rs"]
     mod anthropic;
+    // Codex（Responses）→ Anthropic 上游（2026-10-10 的反向翻譯）
+    #[path = "e2e_translate/responses_to_anthropic.rs"]
+    mod responses_to_anthropic;

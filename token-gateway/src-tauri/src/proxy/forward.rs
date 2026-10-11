@@ -13,6 +13,8 @@ pub(super) struct ReroutedProvider {
     pub(super) api_key: String,
     pub(super) scheme: String,
     pub(super) format: String,
+    /// 逐模型協議（provider_models.protocol）；空 = 未偵測
+    pub(super) protocol: String,
 }
 /// 組裝上游 URL 與轉發標頭，回傳 `(url, headers)`。
 ///
@@ -26,12 +28,17 @@ pub(super) fn build_upstream_target(
     authed: &keys::AuthedKey,
     translated: bool,
     app: &str,
+    target_fmt: TargetFmt,
 ) -> (String, Vec<(String, String)>) {
     let mut url = if translated {
-        format!(
-            "{}/chat/completions",
-            authed.provider_base_url.trim_end_matches('/')
-        )
+        // 翻譯路徑的端點由**目標協議**決定，不能寫死 /chat/completions ——
+        // Anthropic 上游（例如 opencode-go 的 /messages）是另一個路徑。
+        let base = authed.provider_base_url.trim_end_matches('/');
+        if matches!(target_fmt, TargetFmt::Anthropic) {
+            format!("{base}/messages")
+        } else {
+            format!("{base}/chat/completions")
+        }
     } else {
         join_upstream(&authed.provider_base_url, parts.uri.path())
     };
@@ -51,6 +58,22 @@ pub(super) fn build_upstream_target(
         }
     }
     let pkey = authed.provider_api_key.as_str();
+    // Anthropic 目標**一律補上** `x-api-key` + 版本頭，即使來源的 auth_scheme
+    // 是 bearer。
+    //
+    // 為什麼：`/messages` 端點普遍只認 `x-api-key`。實測 opencode-go 用
+    // `Authorization: Bearer` 打 `/messages` 會回 401 `Missing API key`，
+    // 而同一個來源的 `/chat/completions` 認 Bearer。逐模型協議讓「一個來源
+    // 同時服務兩種協議」成為常態之後，鑑權就必須跟著**目標協議**走，而不是
+    // 只跟著來源走 —— 否則那個來源的 Anthropic 模型永遠 401。
+    //
+    // 用「補上」而不是「取代」：來源若本來就宣告 anthropic，下面的 match 會
+    // 再加一次同樣的標頭（`reqwest` 以最後一個為準，值相同無害）；而某些
+    // 代理只認 Bearer，兩者都送才能同時涵蓋。
+    if matches!(target_fmt, TargetFmt::Anthropic) && !pkey.is_empty() {
+        fwd.push(("x-api-key".to_string(), pkey.to_string()));
+        fwd.push(("anthropic-version".to_string(), "2023-06-01".to_string()));
+    }
     match authed.provider_auth_scheme.as_str() {
         "goog-key" => {
             // Google 原生：x-goog-api-key，不用 Bearer
@@ -112,7 +135,7 @@ pub(super) fn resolve_model_provider(
     exclude_pid: i64,
 ) -> Option<ReroutedProvider> {
     conn.query_row(
-        "SELECT p.id, p.base_url, p.api_key, p.auth_scheme, p.api_format
+        "SELECT p.id, p.base_url, p.api_key, p.auth_scheme, p.api_format, m.protocol
          FROM provider_models m JOIN providers p ON p.id = m.provider_id
          WHERE m.enabled = 1 AND p.enabled = 1 AND p.id != ?2
            AND (lower(m.display_name) = lower(?1) OR lower(m.actual_model) = lower(?1))
@@ -125,6 +148,7 @@ pub(super) fn resolve_model_provider(
                 api_key: r.get(2)?,
                 scheme: r.get(3)?,
                 format: r.get(4)?,
+                protocol: r.get(5)?,
             })
         },
     )
@@ -142,7 +166,7 @@ pub(super) fn resolve_model_providers(
     exclude_pid: i64,
 ) -> Vec<ReroutedProvider> {
     let mut stmt = match conn.prepare(
-        "SELECT p.id, p.base_url, p.api_key, p.auth_scheme, p.api_format
+        "SELECT p.id, p.base_url, p.api_key, p.auth_scheme, p.api_format, m.protocol
          FROM provider_models m JOIN providers p ON p.id = m.provider_id
          WHERE m.enabled = 1 AND p.enabled = 1 AND p.id != ?2
            AND (lower(m.display_name) = lower(?1) OR lower(m.actual_model) = lower(?1))
@@ -159,6 +183,7 @@ pub(super) fn resolve_model_providers(
             api_key: r.get(2)?,
             scheme: r.get(3)?,
             format: r.get(4)?,
+            protocol: r.get(5)?,
         })
     });
     match rows {
@@ -212,12 +237,23 @@ pub(super) fn translate_forward_body(
             return BodyPrep::Unparsable;
         };
         let actual = crate::models::resolve_actual(conn, provider_id, model_raw);
-        fwd_value = Some(if fmt.kind == TransKind::ResponsesToChat {
-            // 思考強度只轉發「這個模型收得下」的檔位（見 models::allowed_efforts）
-            let allowed = crate::models::allowed_efforts(conn, provider_id, &actual);
-            crate::translate::responses_to_openai(&v, &actual, &allowed)
-        } else {
-            crate::translate::anthropic_to_openai(&v, &actual)
+        // 思考強度只轉發「這個模型收得下」的檔位（見 models::allowed_efforts）
+        let allowed = crate::models::allowed_efforts(conn, provider_id, &actual);
+        fwd_value = Some(match fmt.kind {
+            TransKind::ResponsesToChat => {
+                crate::translate::responses_to_openai(&v, &actual, &allowed)
+            }
+            // Responses → Anthropic 是**兩跳**：先重用既有的 Responses→Chat，
+            // 再接 Chat→Anthropic。刻意不另寫一份 Responses⇄Anthropic 的直接翻譯
+            // ——那會是第二套要維護的 Responses 語意。
+            TransKind::ResponsesToAnthropic => {
+                let chat = crate::translate::responses_to_openai(&v, &actual, &allowed);
+                crate::translate::chat_to_anthropic(&chat, &actual, &allowed)
+            }
+            TransKind::ChatToAnthropic => {
+                crate::translate::chat_to_anthropic(&v, &actual, &allowed)
+            }
+            _ => crate::translate::anthropic_to_openai(&v, &actual),
         });
         translated_model = actual;
     } else if !model_raw.is_empty() {

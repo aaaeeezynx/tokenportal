@@ -24,6 +24,7 @@ import {
 } from "../ModelCatalog";
 import {
   API_FORMATS,
+  API_FORMATS_ADVANCED,
   APP_TYPES,
   AUTH_SCHEMES,
   EMPTY_INPUT,
@@ -95,6 +96,7 @@ export function ProviderForm(props: {
               actual_model: m,
               context_window: null,
               reasoning: "unset",
+              protocol: "",
               ord: i * 10,
               enabled: true,
             });
@@ -143,6 +145,7 @@ export function ProviderForm(props: {
             actual_model: m,
             context_window: null,
             reasoning: "unset",
+            protocol: "",
             ord: i * 10,
             enabled: true,
           });
@@ -195,13 +198,35 @@ export function ProviderForm(props: {
           />
         </div>
         <div className="mac-frow">
-          <span className="mac-cap">接口格式</span>
+          <span className="mac-cap">
+            接口格式
+            <span className="ml-1 font-normal text-fg/25">
+              auto = 逐模型偵測（同一個訂閱可混用協議）
+            </span>
+          </span>
           <PopSelect
             value={form.api_format}
             onChange={(v) => set("api_format", v)}
-            options={API_FORMATS.map((a) => ({ value: a, label: a }))}
+            options={[
+              ...API_FORMATS.map((o) => ({ value: o.id, label: o.label })),
+              // 現有的明確值不在簡化清單裡時，補一項讓它顯示得出來（不靜默改掉
+              // 使用者的設定）；要改回 auto 就從上面那兩項挑。
+              ...(API_FORMATS.some((o) => o.id === form.api_format)
+                ? []
+                : [{ value: form.api_format, label: `${form.api_format}（目前值）` }]),
+            ]}
           />
         </div>
+        <details className="mac-frow">
+          <summary className="cursor-pointer text-[11px] text-fg/30">
+            進階：明確指定來源協議（不看逐模型偵測）
+          </summary>
+          <PopSelect
+            value={form.api_format}
+            onChange={(v) => set("api_format", v)}
+            options={API_FORMATS_ADVANCED.map((a) => ({ value: a, label: a }))}
+          />
+        </details>
       </div>
 
       <div className="form-section">
@@ -283,7 +308,7 @@ export function ProviderForm(props: {
               </button>
               <span className="text-[11px] text-fg/25">貼上 API Key 後直接抓取，無需先點儲存</span>
             </div>
-            {draftMsg && <p className="text-xs text-amber-300">{draftMsg}</p>}
+            {draftMsg && <p className="text-xs text-(--mac-amber)">{draftMsg}</p>}
             {draftModels.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {draftModels.map((m) => (
@@ -343,7 +368,7 @@ export function ProviderForm(props: {
       </div>
 
       {err && (
-        <div className="rounded-lg border border-red-500/20 bg-red-500/[0.05] px-3 py-2 text-xs text-red-400">
+        <div className="rounded-lg border border-red-500/20 bg-red-500/[0.05] px-3 py-2 text-xs text-(--mac-red)">
           {err}
         </div>
       )}

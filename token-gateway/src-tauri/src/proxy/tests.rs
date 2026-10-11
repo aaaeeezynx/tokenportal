@@ -20,9 +20,59 @@ use axum::http::HeaderValue;
 // - `E_*`：矩陣的 400 訊息常數住在 `proxy::matrix`（第十一步拆出）。
 pub(super) use crate::proxy::matrix::{
     E_ANTHROPIC_UNSUPPORTED, E_CHAT_TO_RESPONSES, E_GEMINI_IN_ONLY, E_GEMINI_OUT_ONLY,
-    E_REVERSE_UNSUPPORTED,
 };
 pub(super) use crate::translate::SseUsage;
+
+// ------------------------------------------------------------ 共用 helper ---
+// e2e 子模組都要用（`e2e_strict` 與 `e2e_translate` 都有跨格式的案例），
+// 所以放在這個共同父模組，而不是某一個子模組裡。
+
+/// 插一個來源（base_url 先留佔位，測試再 UPDATE 成假上游的埠）。
+pub(super) fn seed_provider(conn: &rusqlite::Connection, name: &str) -> i64 {
+    conn.execute(
+        "INSERT INTO providers (name, app_type, api_format, base_url, api_key, auth_scheme,
+         models_json, priority, enabled, created_at, updated_at)
+         VALUES (?1,'codex','openai-chat','PLACEHOLDER','up-key','bearer','[]',0,1,0,0)",
+        [name],
+    )
+    .unwrap();
+    conn.query_row("SELECT id FROM providers WHERE name=?1", [name], |r| r.get(0))
+        .unwrap()
+}
+
+/// 插一個可用模型；`reasoning` 給 `None` 代表留空（未宣告）。
+pub(super) fn seed_model(
+    conn: &rusqlite::Connection,
+    pid: i64,
+    actual: &str,
+    reasoning: Option<&str>,
+) {
+    conn.execute(
+        "INSERT INTO provider_models
+             (provider_id, display_name, actual_model, reasoning, ord, enabled)
+         VALUES (?1, ?2, ?2, ?3, 0, 1)",
+        rusqlite::params![pid, actual, reasoning.unwrap_or("")],
+    )
+    .unwrap();
+}
+
+/// 簽一把綁這個來源的本地 Key。
+pub(super) fn seed_key(conn: &rusqlite::Connection, pid: i64, name: &str) -> String {
+    keys::create_key(
+        conn,
+        &keys::KeyInput {
+            name: name.into(),
+            provider_id: Some(pid),
+            quota_tokens: -1,
+            rate_limit_qpm: 0,
+            allowed_models: vec![],
+            allowed_apps: vec![],
+            expires_at: None,
+        },
+    )
+    .unwrap()
+    .secret
+}
 
 #[path = "tests/unit.rs"]
 mod unit;

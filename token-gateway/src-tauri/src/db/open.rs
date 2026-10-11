@@ -237,6 +237,28 @@ pub(crate) fn open_and_ensure(path: &Path) -> Result<Connection, String> {
     // 四個功能已移除。與 v14 不同 —— 這四個都沒有專屬資料表，所以不需要 DROP；
     // 但它們的狀態放在通用的 `settings` 表裡，不清就會變成沒人讀的孤兒列。
     purge_removed_feature_settings(&conn).map_err(|e| e.to_string())?;
+    // v16 → v17（2026-10-10）：`provider_models` 補上逐模型協議。
+    //
+    // 由來：**協議是「某個模型在某個上游」的屬性，不是「來源」的屬性。**
+    // 實測 opencode-go（訂閱制、單一來源、單一金鑰）同一個 base_url 底下，
+    // `claude-haiku-5-5` 只吃 Anthropic Messages（`/messages` + `x-api-key`），
+    // 而 `deepseek-*` 吃 OpenAI chat。用來源級的 `api_format` 描述不了這件事，
+    // 使用者只能把同一個訂閱拆成兩個來源 —— 那會讓金鑰重複，也把 App 的
+    // 用量／成本／健康度統計切碎（而上游那邊本來就只有一份額度）。
+    //
+    // 空字串 = 未偵測（走 `api_format`，或 `auto` 時逐協議試）。
+    let has_protocol: bool = conn
+        .prepare("SELECT 1 FROM pragma_table_info('provider_models') WHERE name='protocol'")
+        .map_err(|e| e.to_string())?
+        .exists([])
+        .map_err(|e| e.to_string())?;
+    if !has_protocol {
+        conn.execute(
+            "ALTER TABLE provider_models ADD COLUMN protocol TEXT NOT NULL DEFAULT ''",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+    }
     // 列齊了再建索引（整批 SCHEMA 先於 ALTER，老庫在此之前無此列）
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_logs_import ON request_logs(import_path)",

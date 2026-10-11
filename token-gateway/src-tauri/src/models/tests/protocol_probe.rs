@@ -84,11 +84,7 @@ fn transient_failure_is_inconclusive_not_rejection() {
         probed_protocol(&conn, pid, "claude-haiku-5-5").is_none(),
         "暫時性失敗不該被記成「這個模型只走 Anthropic」"
     );
-    assert!(!is_unreachable_for_openai_clients(
-        &conn,
-        pid,
-        "claude-haiku-5-5"
-    ));
+    assert!(probed_protocol(&conn, pid, "claude-haiku-5-5").is_none());
 }
 
 /// 限流（429）與連線失敗同樣算 inconclusive。
@@ -136,11 +132,10 @@ fn explicit_rejection_yields_a_definitive_conclusion() {
         probed_protocol(&conn, pid, "claude-haiku-5-5").as_deref(),
         Some("anthropic")
     );
-    assert!(is_unreachable_for_openai_clients(
-        &conn,
-        pid,
-        "claude-haiku-5-5"
-    ));
+    assert_eq!(
+        probed_protocol(&conn, pid, "claude-haiku-5-5").as_deref(),
+        Some("anthropic")
+    );
 }
 
 /// 只認 Anthropic 的模型 → 判定為 anthropic，而且**不再往下試**。
@@ -199,9 +194,14 @@ fn protocol_probe_records_nothing_when_all_fail() {
     assert!(probed_protocol(&conn, pid, "claude-haiku-5-5").is_none());
 }
 
-/// 寫入後：`is_unreachable_for_openai_clients` 要成立，而且**目錄會排除它**。
+/// ★ 迴歸（2026-10-11）：Anthropic-only 的模型**必須**被收進 Codex 目錄。
+///
+/// 反向翻譯器（OpenAI → Anthropic）實作之前，這裡曾經反過來 —— 目錄會把
+/// 這種模型排除掉。那在當時是對的（提供了也永遠失敗），但翻譯器做好之後
+/// 就變成「明明能用卻在選單裡看不到」，實例是 opencode-go 的
+/// `claude-haiku-5-5`。
 #[test]
-fn anthropic_only_model_is_excluded_from_the_codex_catalog() {
+fn anthropic_only_model_is_included_in_the_codex_catalog() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("home");
     std::fs::create_dir_all(home.join(".codex")).unwrap();
@@ -218,7 +218,6 @@ fn anthropic_only_model_is_excluded_from_the_codex_catalog() {
     seed_model(&conn, pid, "claude-haiku-5-5", None);
     seed_model(&conn, pid, "deepseek-v4.1-flash", None);
 
-    // 只有 claude 被實測成 anthropic-only
     crate::trace::remember_protocol(
         &conn,
         pid,
@@ -227,17 +226,6 @@ fn anthropic_only_model_is_excluded_from_the_codex_catalog() {
         "anthropic",
     )
     .unwrap();
-    crate::trace::remember_protocol(
-        &conn,
-        pid,
-        "deepseek-v4.1-flash",
-        PROBED_PROTOCOL_KEY,
-        "chat",
-    )
-    .unwrap();
-
-    assert!(is_unreachable_for_openai_clients(&conn, pid, "claude-haiku-5-5"));
-    assert!(!is_unreachable_for_openai_clients(&conn, pid, "deepseek-v4.1-flash"));
 
     let dest = codex_catalog_generate(&conn, &home, &data, pid, false).unwrap();
     let v: serde_json::Value =
@@ -248,11 +236,11 @@ fn anthropic_only_model_is_excluded_from_the_codex_catalog() {
         .iter()
         .map(|m| m["slug"].as_str().unwrap())
         .collect();
-    assert_eq!(
-        slugs,
-        vec!["deepseek-v4.1-flash"],
-        "只走 Anthropic 的模型不該提供給 Codex"
+    assert!(
+        slugs.contains(&"claude-haiku-5-5"),
+        "Anthropic-only 的模型現在用得了，必須出現在目錄裡：{slugs:?}"
     );
+    assert!(slugs.contains(&"deepseek-v4.1-flash"), "{slugs:?}");
 }
 
 /// 哨兵鍵不會干擾換手用的逐宣告記憶。
@@ -272,6 +260,9 @@ fn probe_key_does_not_shadow_declared_protocol_memory() {
 }
 
 /// 候選全滅時的訊息要講出真正的原因，而不是「請換模型或換來源」。
+///
+/// 2026-10-11 更新：反向翻譯器實作後，Anthropic-only 的模型**不再**是
+/// 「Codex 到不了」，所以訊息改成指向最可能的原因（鑑權）。
 #[test]
 fn mismatch_message_explains_anthropic_only_models() {
     let dir = tempfile::tempdir().unwrap();
@@ -282,7 +273,10 @@ fn mismatch_message_explains_anthropic_only_models() {
 
     let msg = protocol_mismatch_message(Some(&conn), pid, "claude-haiku-5-5", 2);
     assert!(msg.contains("Anthropic"), "{msg}");
-    assert!(msg.contains("Claude Code"), "要給出可行的下一步：{msg}");
+    assert!(msg.contains("翻譯"), "要說明網關已經翻譯過了：{msg}");
+    assert!(msg.contains("x-api-key"), "要指向最可能的原因（鑑權）：{msg}");
+    // 這句話已經不成立了 —— 翻譯器做好之後 Codex 到得了
+    assert!(!msg.contains("Codex 到不了"), "舊說法已過時：{msg}");
     assert!(!msg.contains("請換模型或換來源"), "別再給那句沒用的建議：{msg}");
 
     // 沒測過 → 引導去按偵測，而不是空泛地叫人換模型

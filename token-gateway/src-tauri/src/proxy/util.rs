@@ -225,10 +225,21 @@ pub(super) fn is_missing_endpoint(status: StatusCode) -> bool {
         StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED
     )
 }
-/// 是否注入 stream_options 索取用量：僅 OpenAI chat（含翻譯後）。
-/// Responses / Anthropic / Gemini 會因未知欄位被上游 400。
-pub(super) fn should_inject_usage(translated: bool, incoming_path: &str) -> bool {
-    translated || incoming_path.contains("/chat/completions")
+/// 是否注入 `stream_options` 索取用量。
+///
+/// **只有送出去的 body 是 OpenAI chat 形狀時才需要**：Responses／Anthropic／
+/// Gemini 端點收到這個欄位會被上游 400。
+///
+/// 2026-10-10：舊版只看「有沒有翻譯」（`translated`）—— 那在只有「翻成 chat」
+/// 的年代剛好等價，但新增「翻成 Anthropic」之後就不成立了。真機驗證立刻被
+/// 上游擋下：`[invalid_request_error] stream_options: Extra inputs are not permitted`。
+pub(super) fn should_inject_usage(kind: TransKind, incoming_path: &str) -> bool {
+    match kind {
+        TransKind::ResponsesToChat | TransKind::AnthropicToChat => true,
+        TransKind::ChatToAnthropic | TransKind::ResponsesToAnthropic => false,
+        // 直通：看客戶端打的是哪個端點
+        TransKind::None => incoming_path.contains("/chat/completions"),
+    }
 }
 /// 去掉 query 中的 `key` 參數（Google 式鑑權殘留，避免客戶端 key 上送）。
 pub(super) fn strip_key_param(query: Option<&str>) -> Option<String> {

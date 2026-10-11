@@ -126,6 +126,8 @@ export function ModelPanel(props: { provider: Provider; rowsClassName?: string; 
         context_window:
           context.trim() === "" ? null : Number(context) || 0,
         reasoning,
+        // 新增時留空 = 自動；按「偵測協議與思考強度」會自動填入
+        protocol: "",
         ord: (rows.data?.length ?? 0) * 10,
         enabled: true,
       };
@@ -148,7 +150,7 @@ export function ModelPanel(props: { provider: Provider; rowsClassName?: string; 
   const inputClsSm = "field w-full px-3 py-1.5 text-xs";
   return (
     <div>
-      <div className="mb-2 flex flex-wrap items-center gap-2">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <button
           className="btn-ghost flex items-center gap-1.5 px-3.5 py-1.5 text-[13px] disabled:opacity-40"
           disabled={fetch.isPending}
@@ -177,7 +179,7 @@ export function ModelPanel(props: { provider: Provider; rowsClassName?: string; 
             : "尚未抓取"}
         </span>
       </div>
-      <div className="mb-2 flex items-center gap-2">
+      <div className="mb-3 flex items-center gap-2">
         <button
           className="btn-ghost px-3 py-1 text-[11px] disabled:opacity-40"
           disabled={probeAll.isPending || (rows.data || []).length === 0}
@@ -200,11 +202,11 @@ export function ModelPanel(props: { provider: Provider; rowsClassName?: string; 
         </div>
       )}
       {!props.provider.api_key && !props.apiKeyOverride && (
-        <p className="mb-2 text-xs text-amber-400">
+        <p className="mb-2 text-xs text-(--mac-amber)">
           該來源尚未填寫 API Key（請在上方表單填入），否則抓取會 401/403
         </p>
       )}
-      {msg && <p className="mb-2 text-xs text-amber-300">{msg}</p>}
+      {msg && <p className="mb-2 text-xs text-(--mac-amber)">{msg}</p>}
       <div className={`mac-rows scroll-y ${props.rowsClassName ?? "max-h-[38vh]"}`}>
         {(rows.data || []).map((r) => (
           <ModelRowAcc

@@ -51,11 +51,43 @@
         let fake_port = fake_l.local_addr().unwrap().port();
         tokio::spawn(async move { axum::serve(fake_l, fake).await.unwrap() });
 
+        // 假 **Anthropic** 上游：斷言收到翻譯後的 Anthropic 形狀（反向那條）
+        let fake_an = axum::Router::new().route(
+            "/messages",
+            axum::routing::post(|body: axum::Json<serde_json::Value>| async move {
+                assert_eq!(body["model"], "x", "模型名應原樣映射過去");
+                assert_eq!(body["messages"][0]["content"][0]["text"], "hi");
+                // 使用者指定：思考強度直接映射到延伸思考
+                assert_eq!(body["thinking"]["type"], "enabled");
+                assert_eq!(body["thinking"]["budget_tokens"], 16384, "high → 16384");
+                assert!(
+                    body["max_tokens"].as_i64().unwrap() > 16384,
+                    "budget_tokens 必須嚴格小於 max_tokens：{body:?}"
+                );
+                axum::Json(serde_json::json!({
+                    "id": "msg_1", "type": "message", "role": "assistant",
+                    "model": "x",
+                    "content": [{"type": "text", "text": "from anthropic"}],
+                    "stop_reason": "end_turn",
+                    "usage": {"input_tokens": 3, "output_tokens": 4}
+                }))
+                .into_response()
+            }),
+        );
+        let an_l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let an_port = an_l.local_addr().unwrap().port();
+        tokio::spawn(async move { axum::serve(an_l, fake_an).await.unwrap() });
+
         let (secret, an_secret) = {
             let conn = crate::db::open_and_ensure(&db_path).unwrap();
             conn.execute(
                 "UPDATE providers SET base_url=?1 WHERE name='tr'",
                 [format!("http://127.0.0.1:{fake_port}")],
+            )
+            .unwrap();
+            conn.execute(
+                "UPDATE providers SET base_url=?1 WHERE name='an'",
+                [format!("http://127.0.0.1:{an_port}")],
             )
             .unwrap();
             let mk = |name: &str| {
@@ -118,15 +150,25 @@
             .unwrap();
         assert_eq!((m.as_str(), itok, otok), ("deepseek-v4-flash", 8, 2));
 
-        // 2) 反向（OpenAI 請求打 Anthropic 渠道）→ 明確 400
+        // 2) 反向（OpenAI 請求打 Anthropic 渠道）：**2026-10-10 起會翻譯**，
+        //    不再是「反向轉換尚未實現」的 400。假上游在 /messages 上斷言形狀。
         let r = http
             .post(format!("http://127.0.0.1:{gw_port}/v1/chat/completions"))
             .bearer_auth(&an_secret)
-            .json(&serde_json::json!({"model": "x", "messages": []}))
+            .json(&serde_json::json!({
+                "model": "x",
+                "messages": [{"role": "user", "content": "hi"}],
+                "reasoning_effort": "high"
+            }))
             .send()
             .await
             .unwrap();
-        assert_eq!(r.status(), 400);
+        assert_eq!(r.status(), 200, "反向翻譯器已實作，應成功而非 400");
+        let body: serde_json::Value = r.json().await.unwrap();
+        assert_eq!(body["object"], "chat.completion");
+        assert_eq!(body["choices"][0]["message"]["content"], "from anthropic");
+        assert_eq!(body["usage"]["prompt_tokens"], 3);
+        assert_eq!(body["usage"]["completion_tokens"], 4);
 
         gw.abort();
     }

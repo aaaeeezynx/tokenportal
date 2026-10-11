@@ -13,7 +13,7 @@ export function ProbeResult(props: { report: ReasoningProbeReport }) {
 
   if (r.aborted) {
     return (
-      <div className="rounded-lg border border-red-500/20 bg-red-500/[0.05] px-3 py-2 text-[11px] break-words text-red-400/90">
+      <div className="rounded-lg border border-red-500/20 bg-red-500/[0.05] px-3 py-2 text-[11px] break-words text-(--mac-red)">
         無法偵測：{r.aborted}
         <div className="pt-1 text-fg/40">
           這不是強度的問題，所以沒有改動任何設定。修好之後再按一次。
@@ -28,21 +28,21 @@ export function ProbeResult(props: { report: ReasoningProbeReport }) {
         已發 {r.requests} 個請求（1 個基準 ＋ 8 個候選強度）
       </div>
       {r.supported.length > 0 ? (
-        <div className="text-emerald-400/90">
+        <div className="text-(--mac-green)">
           支援：{r.supported.join(" / ")}
         </div>
       ) : (
-        <div className="text-amber-300/90">
+        <div className="text-(--mac-amber)">
           這個模型不接受任何思考強度（全部被上游拒絕）
         </div>
       )}
       {r.unsupported.length > 0 && (
-        <div className="text-red-400/80">
+        <div className="text-(--mac-red)">
           不支援：{r.unsupported.join(" / ")}
         </div>
       )}
       {r.inconclusive.length > 0 && (
-        <div className="text-amber-300/80">
+        <div className="text-(--mac-amber)">
           無法判定（未寫入）：
           {r.inconclusive.map((o) => ` ${o.level}`).join("、")}
           <div className="text-fg/35">

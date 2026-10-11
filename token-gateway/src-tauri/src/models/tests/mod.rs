@@ -100,6 +100,7 @@ fn seed_model(conn: &rusqlite::Connection, pid: i64, actual: &str, reasoning: Op
                 actual_model: "deepseek-v4-flash".into(),
                 context_window: None,
                 reasoning: "unset".into(),
+                protocol: String::new(),
                 ord: 0,
                 enabled: true,
             },
@@ -137,6 +138,7 @@ fn seed_model(conn: &rusqlite::Connection, pid: i64, actual: &str, reasoning: Op
             actual_model: "deepseek-v4-flash".into(),
             context_window: Some(128000),
             reasoning: "high".into(),
+            protocol: String::new(),
             ord: 0,
             enabled: true,
         };

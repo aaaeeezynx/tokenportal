@@ -199,6 +199,12 @@ pub(crate) fn probe_protocol_http(cfg: &ProbeCfg) -> ProtocolProbeReport {
 
 /// 寫入協議記憶（不碰網路）。
 ///
+/// 兩個地方：
+/// - `provider_models.protocol`：**權威**的逐模型協議，網關路由直接讀它
+///   （見 `proxy/failover.rs` 的 `formats_for`）
+/// - `provider_model_protocol`（`__probe__` 鍵）：留一份帶時間戳的紀錄，
+///   讓診斷頁看得出「這個結論是什麼時候得到的」
+///
 /// **只有結論確定時才寫**。`definitive` 為假代表「其他協議只是暫時失敗」，
 /// 那時記下「這個模型只走 X」會讓目錄把它從 Codex 下架 —— 破壞性且錯誤。
 pub(crate) fn probe_protocol_write(
@@ -212,7 +218,36 @@ pub(crate) fn probe_protocol_write(
     let Some(p) = report.protocol.as_deref() else {
         return Ok(());
     };
+    conn.execute(
+        "UPDATE provider_models SET protocol = ?1
+         WHERE provider_id = ?2 AND actual_model = ?3",
+        rusqlite::params![p, provider_id, report.model.trim()],
+    )
+    .map_err(|e| e.to_string())?;
     crate::trace::remember_protocol(conn, provider_id, &report.model, PROBED_PROTOCOL_KEY, p)
+}
+
+/// 讀出這個模型的有效協議：先看逐模型欄位，再看探測記憶。
+///
+/// 網關路由用它決定「這個模型該走哪個端點」。`None` = 未偵測
+/// （呼叫端退回來源的 `api_format`；`auto` 就逐協議試）。
+pub(crate) fn model_protocol(
+    conn: &Connection,
+    provider_id: i64,
+    model: &str,
+) -> Option<String> {
+    let from_column: Option<String> = conn
+        .query_row(
+            "SELECT protocol FROM provider_models
+             WHERE provider_id = ?1
+               AND (lower(actual_model) = lower(?2) OR lower(display_name) = lower(?2))
+             LIMIT 1",
+            rusqlite::params![provider_id, model.trim()],
+            |r| r.get::<_, String>(0),
+        )
+        .ok()
+        .filter(|s: &String| !s.trim().is_empty());
+    from_column.or_else(|| probed_protocol(conn, provider_id, model))
 }
 
 /// 讀出實測到的協議（沒測過就 `None`）。
@@ -220,24 +255,15 @@ pub(crate) fn probed_protocol(conn: &Connection, provider_id: i64, model: &str) 
     crate::trace::load_protocol(conn, provider_id, model, PROBED_PROTOCOL_KEY)
 }
 
-/// 這個模型是不是「Codex 到不了」的（實測只走 Anthropic）。
-///
-/// 目錄生成用它把這種模型**排除**：提供一個永遠會失敗的模型比不提供更糟
-/// —— 使用者選了只會拿到「此模型不支援本協議」，而原因完全看不出來。
-pub(crate) fn is_unreachable_for_openai_clients(
-    conn: &Connection,
-    provider_id: i64,
-    model: &str,
-) -> bool {
-    probed_protocol(conn, provider_id, model).as_deref() == Some("anthropic")
-}
-
 /// 「所有候選都被上游以 `ModelProtocolUnsupported` 拒絕」時該講什麼。
 ///
 /// 舊訊息只說「請換模型或換來源」，把真正的原因藏起來了 —— 使用者唯一能做的
-/// 是猜。2026-10-10 的實例：opencode-go 的 `claude-haiku-5-5` 只吃 Anthropic
-/// Messages，而網關**沒有** OpenAI → Anthropic 的反向翻譯，所以在 Codex 底下
-/// 它永遠不可能成功。這種事要直接講，並給出真的可行的下一步。
+/// 是猜。
+///
+/// **2026-10-11 更新**：原本 `anthropic` 那一支說「Codex 到不了它」，但
+/// OpenAI → Anthropic 的反向翻譯器已經實作（見 `translate/anthropic_req.rs`），
+/// 那句話不再成立。現在改成講「翻譯過了卻仍被拒」，並指向最可能的原因
+/// （`/messages` 普遍只認 `x-api-key`）。
 ///
 /// `conn` 傳 `None` 代表資料庫不可用（那就只能給通用訊息）。
 pub(crate) fn protocol_mismatch_message(
@@ -249,21 +275,21 @@ pub(crate) fn protocol_mismatch_message(
     let probed = conn.and_then(|c| probed_protocol(c, provider_id, model));
     match probed.as_deref() {
         Some("anthropic") => format!(
-            "模型 {model} 只走 Anthropic Messages 協議（/messages），\
-             但這個客戶端用的是 OpenAI 格式（Codex 走 Responses）。\
-             網關沒有「OpenAI → Anthropic」的反向翻譯，所以它在此路徑下無法使用。\
-             做法：改用 Claude Code（Anthropic 入站可以直接用它），\
-             或為它另開一個「接口格式 = anthropic、鑑權 = anthropic」的來源。"
+            "模型 {model} 實測走 Anthropic Messages 協議（/messages），\
+             網關已自動翻譯（OpenAI → Anthropic）卻仍被上游以「不支援本協議」拒絕。\
+             最可能的原因是來源的**鑑權**：`/messages` 通常只認 `x-api-key`，\
+             用 Bearer 會回 401／400。請把來源的鑑權設成 Anthropic API Key，\
+             或按一次「偵測協議與思考強度」重新確認。"
         ),
         Some(p) => format!(
             "模型 {model} 在來源的所有協議下都不被接受（試過 {tried} 個候選）；\
              實測它走的是「{p}」協議。請確認來源的接口格式設定，或按一次\
-             「偵測思考強度」重新確認。"
+             「偵測協議與思考強度」重新確認。"
         ),
         None => format!(
             "模型 {model} 在來源的所有協議下都不被接受（試過 {tried} 個候選）：\
              上游回報此模型不支援這些協議。\
-             建議先按一次「偵測思考強度」—— 它會一併測出這個模型實際走哪一種協議，\
+             建議先按一次「偵測協議與思考強度」—— 它會一併測出這個模型實際走哪一種協議，\
              這樣才分得出是「協議不對」還是「模型名／權限有問題」。"
         ),
     }

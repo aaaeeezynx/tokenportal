@@ -130,7 +130,7 @@ export function ChannelPricing(props: {
                   {MODE_LABEL[r.mode]}
                 </span>
                 <button
-                  className="shrink-0 rounded-full p-1.5 text-fg/35 transition-colors hover:bg-red-500/10 hover:text-red-400"
+                  className="shrink-0 rounded-full p-1.5 text-fg/35 transition-colors hover:bg-red-500/10 hover:text-(--mac-red)"
                   title="刪除"
                   onClick={(e) => {
                     e.stopPropagation();

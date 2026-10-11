@@ -13,6 +13,11 @@ pub(super) enum TransKind {
     None,
     AnthropicToChat,
     ResponsesToChat,
+    /// OpenAI Chat 請求 → Anthropic 上游（2026-10-10 補的反向）
+    ChatToAnthropic,
+    /// Responses（Codex）請求 → Anthropic 上游。請求側是兩跳組合：
+    /// `responses_to_openai` 再接 `chat_to_anthropic`。
+    ResponsesToAnthropic,
 }
 
 impl TransKind {
@@ -21,6 +26,8 @@ impl TransKind {
             TransKind::None => "none",
             TransKind::AnthropicToChat => "anthropic_to_chat",
             TransKind::ResponsesToChat => "responses_to_chat",
+            TransKind::ChatToAnthropic => "chat_to_anthropic",
+            TransKind::ResponsesToAnthropic => "responses_to_anthropic",
         }
     }
 }
@@ -98,6 +105,17 @@ pub(super) enum TargetFmt {
     Mixed,
     Anthropic,
     Gemini,
+    /// `auto`（2026-10-10）：**協議逐模型決定**，由 `provider_models.protocol`
+    /// 或入站格式推導（見 `failover::formats_for`）。
+    ///
+    /// 這是新來源的預設值。動機：協議是「模型在某個上游」的屬性，不是「來源」
+    /// 的屬性 —— 訂閱制的 opencode-go 單一 base_url 底下 Claude 走 `/messages`、
+    /// 其餘走 `/chat/completions`，用來源級欄位描述不了，使用者只能把同一個
+    /// 訂閱拆成兩個來源（金鑰重複、統計被切碎）。
+    ///
+    /// **這一格不該被走到**：`formats_for` 會先把 `auto` 展開成具體協議再排候選。
+    /// 留著是為了讓 match 保持窮舉（少列一格就編譯失敗）。
+    Auto,
     /// `api_format` 不在已知值內（拼錯或未來新增）。**不猜測協議**。
     Unknown,
 }
@@ -110,6 +128,7 @@ impl TargetFmt {
             "mixed" => TargetFmt::Mixed,
             "anthropic" => TargetFmt::Anthropic,
             "gemini" => TargetFmt::Gemini,
+            "auto" => TargetFmt::Auto,
             _ => TargetFmt::Unknown,
         }
     }
@@ -121,6 +140,7 @@ impl TargetFmt {
             TargetFmt::Mixed => "mixed",
             TargetFmt::Anthropic => "anthropic",
             TargetFmt::Gemini => "gemini",
+            TargetFmt::Auto => "auto",
             TargetFmt::Unknown => "unknown",
         }
     }
@@ -129,13 +149,17 @@ impl TargetFmt {
 // 400 訊息（使用者直接看到，故集中管理）
 pub(super) const E_ANTHROPIC_UNSUPPORTED: &str =
     "該渠道不接受 Anthropic 請求：請換 Anthropic 官方或 OpenAI 兼容渠道";
-pub(super) const E_REVERSE_UNSUPPORTED: &str =
-    "反向轉換（OpenAI → Anthropic）尚未實現，請換 OpenAI 兼容渠道";
+// `E_REVERSE_UNSUPPORTED`（「反向轉換尚未實現」）已於 2026-10-10 移除：
+// OpenAI → Anthropic 的翻譯器已實作，兩個矩陣格不再是 Err。
 pub(super) const E_GEMINI_IN_ONLY: &str = "Gemini 原生請求只能走 Gemini 渠道";
 pub(super) const E_GEMINI_OUT_ONLY: &str = "Gemini 渠道只接受 Gemini 原生請求";
 /// B6：chat 請求打到 responses 端點，原實作靜默直通而必然失敗，改為明確報錯。
 pub(super) const E_CHAT_TO_RESPONSES: &str =
     "此渠道為 Responses 協議，不接受 OpenAI Chat 請求：請改用 Chat 兼容渠道，或改用 Codex 等 Responses 客戶端";
+/// `auto` 不該走到矩陣：`formats_for` 會先把它展開成具體協議。
+/// 走到這裡代表內部不變式被破壞（例如新增了沒走 `formats_for` 的呼叫路徑）。
+pub(super) const E_AUTO_UNRESOLVED: &str =
+    "內部錯誤：auto 協議未被解析（請回報此訊息）";
 
 /// 入站格式 × 渠道協議 → 翻譯類型（`Err` = 該組合不支援，字串即 400 訊息）。
 ///
@@ -153,6 +177,7 @@ pub(super) fn resolve_trans_kind(in_fmt: InFmt, target: TargetFmt) -> Result<Tra
         (Anthropic, T::OpenAiResponses)
         | (Anthropic, T::Gemini)
         | (Anthropic, T::Unknown) => Err(E_ANTHROPIC_UNSUPPORTED),
+        (Anthropic, T::Auto) => Err(E_AUTO_UNRESOLVED),
 
         // ── Responses 入站（Codex）──
         (Responses, T::OpenAiChat) => Ok(TransKind::ResponsesToChat),
@@ -160,15 +185,19 @@ pub(super) fn resolve_trans_kind(in_fmt: InFmt, target: TargetFmt) -> Result<Tra
         // 的直通保留原始路徑）。翻譯成 chat 會讓 responses-only 的模型一律 400。
         (Responses, T::Mixed) => Ok(TransKind::None),
         (Responses, T::OpenAiResponses) => Ok(TransKind::None),
-        (Responses, T::Anthropic) => Err(E_REVERSE_UNSUPPORTED),
+        // 2026-10-10：反向翻譯器已實作（見 translate/anthropic_req.rs）。
+        // 請求側是兩跳：responses_to_openai → chat_to_anthropic。
+        (Responses, T::Anthropic) => Ok(TransKind::ResponsesToAnthropic),
         (Responses, T::Gemini) => Err(E_GEMINI_OUT_ONLY),
+        (Responses, T::Auto) => Err(E_AUTO_UNRESOLVED),
         (Responses, T::Unknown) => Ok(TransKind::None),
 
         // ── OpenAI Chat 入站 ──
         (OpenAi, T::OpenAiChat) | (OpenAi, T::Mixed) => Ok(TransKind::None),
         (OpenAi, T::OpenAiResponses) => Err(E_CHAT_TO_RESPONSES),
-        (OpenAi, T::Anthropic) => Err(E_REVERSE_UNSUPPORTED),
+        (OpenAi, T::Anthropic) => Ok(TransKind::ChatToAnthropic),
         (OpenAi, T::Gemini) => Err(E_GEMINI_OUT_ONLY),
+        (OpenAi, T::Auto) => Err(E_AUTO_UNRESOLVED),
         (OpenAi, T::Unknown) => Ok(TransKind::None),
 
         // ── Gemini 原生入站 ──
@@ -177,6 +206,7 @@ pub(super) fn resolve_trans_kind(in_fmt: InFmt, target: TargetFmt) -> Result<Tra
         | (Gemini, T::OpenAiResponses)
         | (Gemini, T::Mixed)
         | (Gemini, T::Anthropic)
+        | (Gemini, T::Auto)
         | (Gemini, T::Unknown) => Err(E_GEMINI_IN_ONLY),
 
         // ── 未知入站格式（中性路徑）──
@@ -186,5 +216,7 @@ pub(super) fn resolve_trans_kind(in_fmt: InFmt, target: TargetFmt) -> Result<Tra
         | (Unknown, T::Mixed)
         | (Unknown, T::Anthropic)
         | (Unknown, T::Unknown) => Ok(TransKind::None),
+        // 中性路徑（如 /v1/models）：auto 就照原樣透傳，不猜協議
+        (Unknown, T::Auto) => Ok(TransKind::None),
     }
 }

@@ -387,16 +387,12 @@ pub(crate) fn codex_catalog_generate(
         if slug.is_empty() || !seen.insert(slug.clone()) {
             continue;
         }
-        // 實測只走 Anthropic 協議的模型**不要提供給 Codex**。
+        // 這裡曾經有一段「實測只走 Anthropic 的模型不要提供給 Codex」的排除。
         //
-        // 2026-10-10 的實例：opencode-go 的 `claude-haiku-5-5` 在 `/models`
-        // 清單裡，但只吃 `/messages`。目錄照樣把它列出來，使用者選了只會拿到
-        // 「此模型不支援本協議」—— 而真正的原因（協議不對、而且網關沒有
-        // OpenAI → Anthropic 的反向翻譯）從錯誤訊息完全看不出來。
-        // 提供一個永遠會失敗的模型，比不提供更糟。
-        if crate::models::is_unreachable_for_openai_clients(conn, pid, &slug) {
-            continue;
-        }
+        // **2026-10-11 移除**：它的前提是「Codex 到不了 Anthropic-only 模型」，
+        // 而 OpenAI → Anthropic 的反向翻譯器已經實作（見 translate/anthropic_req.rs），
+        // 那些模型現在**用得了**。留著排除只會讓使用者明明能用卻在選單裡看不到
+        // ——實例就是 opencode-go 的 `claude-haiku-5-5`。
         let mut e = first.clone();
         e["slug"] = serde_json::Value::String(slug.clone());
         // issue #3668：桌面版 /model 與選擇器認 `model` 欄位，只寫 slug 會顯示空白

@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-query";
 import {
   api,
+  MODEL_PROTOCOLS,
   REASONING_OPTIONS,
   type UsableModel,
   type UsableModelInput,
@@ -53,6 +54,9 @@ export function ModelRowAcc(props: {
   const [reasoning, setReasoning] = useState<string>(
     row.reasoning,
   );
+  // 逐模型協議（空 = 自動）。協定是「模型在某個上游」的屬性 ——
+  // 訂閱制來源可以同一個 base_url 混用多種協議（見 models/protocol_probe.rs）
+  const [protocol, setProtocol] = useState<string>(row.protocol ?? "");
   // 展開時用最新值重置草稿
   useEffect(() => {
     if (open) {
@@ -60,6 +64,7 @@ export function ModelRowAcc(props: {
       setActual(row.actual_model);
       setContext(row.context_window != null ? String(row.context_window) : "");
       setReasoning(row.reasoning);
+      setProtocol(row.protocol ?? "");
       setCustom(catalogIds.length > 0 && !catalogIds.includes(row.actual_model));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -115,6 +120,7 @@ export function ModelRowAcc(props: {
     actual_model: row.actual_model,
     context_window: row.context_window,
     reasoning: row.reasoning,
+    protocol: row.protocol ?? "",
     ord: row.ord,
     enabled: row.enabled,
   };
@@ -131,6 +137,9 @@ export function ModelRowAcc(props: {
         actual_model: a,
         context_window: context.trim() === "" ? null : Number(context) || 0,
         reasoning,
+        // ★ 一定要帶上：`base` 只是起始值，不覆寫的話使用者在下拉選的協議
+        //   會被靜默丟掉、存回原值
+        protocol,
       },
       {
         // 表單儲存成功後自動收起（開關啟用走同一 mutation，不收起）
@@ -166,7 +175,7 @@ export function ModelRowAcc(props: {
           onChange={(v) => save.mutate({ ...base, enabled: v })}
         />
         <button
-          className="shrink-0 rounded-full p-1.5 text-fg/35 transition-colors hover:bg-red-500/10 hover:text-red-400"
+          className="shrink-0 rounded-full p-1.5 text-fg/35 transition-colors hover:bg-red-500/10 hover:text-(--mac-red)"
           title="刪除"
           onClick={(e) => {
             e.stopPropagation();
@@ -245,6 +254,20 @@ export function ModelRowAcc(props: {
             />
           </div>
           <div className="mac-frow">
+            <span className="mac-cap">
+              協議
+              <span className="ml-1 font-normal text-fg/25">空 = 自動（可按下偵測填入）</span>
+            </span>
+            <PopSelect
+              value={protocol}
+              onChange={setProtocol}
+              options={[
+                { value: "", label: "自動／未偵測" },
+                ...MODEL_PROTOCOLS.map((p) => ({ value: p, label: p })),
+              ]}
+            />
+          </div>
+          <div className="mac-frow">
             <span className="mac-cap">思考等級<span className="ml-1 font-normal text-fg/25">空 = 全部檔位</span></span>
             <PopSelect
               multi
@@ -289,7 +312,7 @@ export function ModelRowAcc(props: {
               {probe.data.reason ? (
                 <ProbeResult report={probe.data.reason} />
               ) : (
-                <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2 text-[11px] break-words text-amber-300/90">
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.05] px-3 py-2 text-[11px] break-words text-(--mac-amber)">
                   {probe.data.proto.summary}
                   <div className="pt-1 text-fg/40">
                     協議不通就沒有繼續測思考強度（那些請求只會白花）。

@@ -12,6 +12,12 @@ pub const REASONINGS: [&str; 9] = [
     "unset", "minimal", "low", "medium", "high", "xhigh", "max", "ultra", "persistent",
 ];
 
+/// 逐模型協議的合法值（空 = 未偵測）。
+///
+/// **刻意不含 `gemini`**：Gemini 的 URL 形狀（模型名在路徑裡）與鑑權都不同，
+/// 自動探測不划算，維持由 `providers.api_format` 明確指定。
+pub const MODEL_PROTOCOLS: [&str; 3] = ["openai-chat", "openai-responses", "anthropic"];
+
 #[derive(Debug, Clone, Serialize)]
 pub struct UsableModel {
     pub id: i64,
@@ -20,6 +26,8 @@ pub struct UsableModel {
     pub actual_model: String,
     pub context_window: Option<i64>,
     pub reasoning: String,
+    /// 逐模型協議；空 = 未偵測（見 `models/protocol_probe.rs`）
+    pub protocol: String,
     pub ord: i64,
     pub enabled: bool,
 }
@@ -31,6 +39,9 @@ pub struct UsableModelInput {
     pub actual_model: String,
     pub context_window: Option<i64>,
     pub reasoning: String,
+    /// 逐模型協議；空 = 未偵測
+    #[serde(default)]
+    pub protocol: String,
     pub ord: i64,
     pub enabled: bool,
 }
@@ -45,8 +56,9 @@ fn row_to_model(r: &Row) -> rusqlite::Result<UsableModel> {
         actual_model: r.get(3)?,
         context_window: r.get(4)?,
         reasoning: r.get(5)?,
-        ord: r.get(6)?,
-        enabled: r.get::<_, i64>(7)? != 0,
+        protocol: r.get(6)?,
+        ord: r.get(7)?,
+        enabled: r.get::<_, i64>(8)? != 0,
     })
 }
 
@@ -55,7 +67,8 @@ pub(crate) fn models_list(
     provider_id: i64,
 ) -> rusqlite::Result<Vec<UsableModel>> {
     let mut stmt = conn.prepare(
-        "SELECT id, provider_id, display_name, actual_model, context_window, reasoning, ord, enabled
+        "SELECT id, provider_id, display_name, actual_model, context_window, reasoning,
+                protocol, ord, enabled
          FROM provider_models WHERE provider_id = ?1 ORDER BY ord ASC, id ASC",
     )?;
     let rows: Vec<UsableModel> = stmt
@@ -103,6 +116,13 @@ fn validate_model(input: &UsableModelInput) -> Result<(), String> {
             }
         }
     }
+    let proto = input.protocol.trim();
+    if !proto.is_empty() && !MODEL_PROTOCOLS.contains(&proto) {
+        return Err(format!(
+            "協議「{proto}」不合法，允許值：{}（留空 = 自動偵測）",
+            MODEL_PROTOCOLS.join(" / ")
+        ));
+    }
     Ok(())
 }
 
@@ -113,14 +133,16 @@ pub(crate) fn model_add(
     validate_model(input)?;
     conn.execute(
         "INSERT INTO provider_models
-         (provider_id, display_name, actual_model, context_window, reasoning, ord, enabled)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+         (provider_id, display_name, actual_model, context_window, reasoning, protocol,
+          ord, enabled)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             input.provider_id,
             input.display_name.trim(),
             input.actual_model.trim(),
             input.context_window,
             input.reasoning,
+            input.protocol.trim(),
             input.ord,
             if input.enabled { 1 } else { 0 },
         ],
@@ -144,12 +166,13 @@ pub(crate) fn model_update(
     let n = conn
         .execute(
             "UPDATE provider_models SET display_name=?1, actual_model=?2, context_window=?3,
-             reasoning=?4, ord=?5, enabled=?6 WHERE id=?7",
+             reasoning=?4, protocol=?5, ord=?6, enabled=?7 WHERE id=?8",
             params![
                 input.display_name.trim(),
                 input.actual_model.trim(),
                 input.context_window,
                 input.reasoning,
+                input.protocol.trim(),
                 input.ord,
                 if input.enabled { 1 } else { 0 },
                 id,

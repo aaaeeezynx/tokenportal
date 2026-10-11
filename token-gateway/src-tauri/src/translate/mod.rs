@@ -1,12 +1,15 @@
 //! M7：Anthropic Messages ⇄ OpenAI Chat Completions 翻譯。
 //!
-//! 只做 **Anthropic 進 → OpenAI 出**（Claude Code 經網關打 OpenAI 兼容上游，
-//! 即用戶現有的 cc-switch 流程）。反向遇到時回明確 400，不靜默轉發。
+//! 原本只做 **Anthropic 進 → OpenAI 出**（Claude Code 經網關打 OpenAI 兼容上游，
+//! 即用戶現有的 cc-switch 流程），反向回明確 400。2026-10-10 補上**反向**：
+//! OpenAI 格式的客戶端（Codex、各種 Chat 工具）打 Anthropic 上游
+//! （例如 opencode-go 的 `claude-haiku-5-5`）—— 見 `anthropic_req`／`anthropic_resp`。
 //!
 //! 模型名映射走可用模型表（display_name → actual_model），見 `models::resolve_actual`。
 //!
 //! 本模組按方向／主題拆成子模組：`openai_chat`（Anthropic 進 → OpenAI 出的請求側）、
 //! `sanitize`（Chat 消息配對修復）、`anthropic`（OpenAI 回 → Anthropic，含流式）、
+//! `anthropic_req`／`anthropic_resp`（OpenAI 進 → Anthropic 上游，含流式）、
 //! `responses`＋`responses_tools`＋`responses_stream`＋`responses_finish`
 //!（Responses ⇄ Chat Completions）。子模組的項目在此以 `pub(crate) use` 重新導出，
 //! 因此 `crate::translate::X` 對每個原有名字都不變。
@@ -70,6 +73,8 @@ const MISSING_TOOL_OUTPUT: &str =
 const EMPTY_MESSAGE_PLACEHOLDER: &str = "[empty message — placeholder filled by gateway]";
 
 mod anthropic;
+mod anthropic_req;
+mod anthropic_resp;
 mod openai_chat;
 mod responses;
 mod responses_finish;
@@ -78,6 +83,8 @@ mod responses_tools;
 mod sanitize;
 
 pub(crate) use anthropic::*;
+pub(crate) use anthropic_req::*;
+pub(crate) use anthropic_resp::*;
 pub(crate) use openai_chat::*;
 pub(crate) use responses::*;
 pub(crate) use responses_finish::*;

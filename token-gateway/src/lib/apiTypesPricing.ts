@@ -171,6 +171,14 @@ export interface CatalogCache {
   models: CatalogEntry[];
 }
 
+/**
+ * 逐模型協議的合法值（空 = 未偵測／自動）。
+ *
+ * 刻意不含 `gemini`：它的 URL 形狀（模型名在路徑裡）與鑑權都不同，
+ * 自動探測不划算，維持由來源的 `api_format` 明確指定。
+ */
+export const MODEL_PROTOCOLS = ["openai-chat", "openai-responses", "anthropic"];
+
 export interface UsableModel {
   id: number;
   provider_id: number;
@@ -178,6 +186,8 @@ export interface UsableModel {
   actual_model: string;
   context_window: number | null;
   reasoning: string;
+  /** 逐模型協議；空 = 未偵測（走來源的 api_format，或 auto 時逐協議試） */
+  protocol: string;
   ord: number;
   enabled: boolean;
 }
@@ -188,6 +198,8 @@ export interface UsableModelInput {
   actual_model: string;
   context_window: number | null;
   reasoning: string;
+  /** 逐模型協議；空 = 未偵測 */
+  protocol: string;
   ord: number;
   enabled: boolean;
 }

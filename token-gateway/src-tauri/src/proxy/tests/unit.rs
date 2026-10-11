@@ -12,11 +12,23 @@
 
     #[test]
     fn stream_options_only_for_chat() {
-        assert!(should_inject_usage(false, "/v1/chat/completions"));
-        assert!(should_inject_usage(true, "/v1/messages"));
-        assert!(!should_inject_usage(false, "/v1/responses"));
-        assert!(!should_inject_usage(false, "/v1/messages"));
-        assert!(!should_inject_usage(false, "/v1beta/models/x:generateContent"));
+        // 直通：看客戶端打的端點
+        assert!(should_inject_usage(TransKind::None, "/v1/chat/completions"));
+        assert!(!should_inject_usage(TransKind::None, "/v1/responses"));
+        assert!(!should_inject_usage(TransKind::None, "/v1/messages"));
+        assert!(!should_inject_usage(
+            TransKind::None,
+            "/v1beta/models/x:generateContent"
+        ));
+        // 翻譯成 chat → 要（chat 形狀）
+        assert!(should_inject_usage(TransKind::ResponsesToChat, "/v1/responses"));
+        assert!(should_inject_usage(TransKind::AnthropicToChat, "/v1/messages"));
+        // ★ 翻譯成 Anthropic → **不要**。
+        //   2026-10-10 真機驗證抓到：舊版只看「有沒有翻譯」，於是這裡被注入了
+        //   `stream_options`，上游回
+        //   `[invalid_request_error] stream_options: Extra inputs are not permitted`。
+        assert!(!should_inject_usage(TransKind::ChatToAnthropic, "/v1/chat/completions"));
+        assert!(!should_inject_usage(TransKind::ResponsesToAnthropic, "/v1/responses"));
     }
 
 

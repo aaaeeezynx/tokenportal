@@ -177,15 +177,109 @@ pub(super) fn sse_response(
         .body(stream_body)
         .unwrap_or_else(|_| err_json(StatusCode::INTERNAL_SERVER_ERROR, "構造響應失敗".into()))
 }
+/// Anthropic 上游 → **Chat 客戶端**：Anthropic 事件 → 合成 Chat chunk → SSE。
+///
+/// Anthropic 的 SSE `data:` 內容自帶 `"type"`，所以不必看 `event:` 行。
+pub(super) fn anthropic_line_to_chat(
+    t: &str,
+    state: &mut crate::translate::AnthropicToChatState,
+    acc: &mut SseUsage,
+) -> (Vec<String>, bool) {
+    let Some(d) = t.strip_prefix("data:") else {
+        return (vec![], false);
+    };
+    let d = d.trim_start();
+    if d.is_empty() {
+        return (vec![], false);
+    }
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(d) else {
+        return (vec![], false);
+    };
+    // Anthropic 的 error 事件 → Chat 的 error 物件，收流
+    if v.get("error").is_some() {
+        let e = crate::translate::anthropic_error_to_chat(&v);
+        return (vec![format!("data: {e}\n\n")], true);
+    }
+    let chunks = crate::translate::anthropic_event_to_chat_chunks(state, &v);
+    let mut out = vec![];
+    for c in &chunks {
+        if c.get("usage").is_some() {
+            crate::translate::read_openai_usage(&c["usage"], acc);
+        }
+        out.push(format!("data: {c}\n\n"));
+    }
+    if state.done {
+        out.push("data: [DONE]\n\n".to_string());
+        return (out, true);
+    }
+    (out, false)
+}
+
+/// Anthropic 上游 → **Responses 客戶端（Codex）**：Anthropic 事件 → 合成 Chat
+/// chunk → 餵給既有的 `chat_chunk_to_responses`。
+///
+/// 這正是「兩跳」的第二段 —— 重用既有、已被測過的 Responses 串流建構器，
+/// 而不是再寫一份 Anthropic → Responses 的直接轉換。
+pub(super) fn anthropic_line_to_responses(
+    t: &str,
+    state: &mut ResponsesFromAnthropicRelay,
+    echo: &str,
+    customs: &[String],
+) -> (Vec<String>, bool) {
+    let Some(d) = t.strip_prefix("data:") else {
+        return (vec![], false);
+    };
+    let d = d.trim_start();
+    if d.is_empty() {
+        return (vec![], false);
+    }
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(d) else {
+        return (vec![], false);
+    };
+    if v.get("error").is_some() {
+        let e = crate::translate::anthropic_error_to_chat(&v);
+        return (
+            crate::translate::responses_stream_fail(&mut state.tstate, echo, &e),
+            true,
+        );
+    }
+    let chunks = crate::translate::anthropic_event_to_chat_chunks(&mut state.astate, &v);
+    let mut out = vec![];
+    for c in &chunks {
+        out.extend(crate::translate::chat_chunk_to_responses(
+            &mut state.tstate,
+            c,
+            echo,
+            &mut state.acc,
+            customs,
+        ));
+    }
+    // 收流後由 `on_finish` 補 completed/failed（Responses 分支的既有作法）
+    (out, state.astate.done)
+}
+
 /// Responses 翻譯分支的逐行轉譯狀態。
 #[derive(Default)]
 pub(super) struct ResponsesRelay {
     pub(super) tstate: crate::translate::ResponsesStreamState,
     pub(super) acc: SseUsage,
 }
-/// Anthropic 翻譯分支的逐行轉譯狀態。
+/// Anthropic 翻譯分支的逐行轉譯狀態（**Anthropic 入站** → Chat 上游）。
 #[derive(Default)]
 pub(super) struct AnthropicRelay {
     pub(super) tstate: crate::translate::AnthropicStreamState,
+    pub(super) acc: SseUsage,
+}
+/// Anthropic **上游** → Chat 客戶端（2026-10-10 補的反向）。
+#[derive(Default)]
+pub(super) struct ChatToAnthropicRelay {
+    pub(super) astate: crate::translate::AnthropicToChatState,
+    pub(super) acc: SseUsage,
+}
+/// Anthropic **上游** → Responses 客戶端（Codex）。兩跳的第二段。
+#[derive(Default)]
+pub(super) struct ResponsesFromAnthropicRelay {
+    pub(super) astate: crate::translate::AnthropicToChatState,
+    pub(super) tstate: crate::translate::ResponsesStreamState,
     pub(super) acc: SseUsage,
 }

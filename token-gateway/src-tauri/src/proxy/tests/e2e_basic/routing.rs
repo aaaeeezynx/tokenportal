@@ -26,6 +26,7 @@
                     actual_model: "real-model".into(),
                     context_window: None,
                     reasoning: "unset".into(),
+                    protocol: String::new(),
                     ord: 0,
                     enabled: true,
                 },

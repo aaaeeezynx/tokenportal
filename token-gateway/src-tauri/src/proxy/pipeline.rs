@@ -275,9 +275,10 @@ pub(super) fn prepare_request(input: PrepareInput<'_>) -> Result<Prepared, Box<R
         }
     };
     let translated = kind != TransKind::None;
-    // 流式請求強制索取用量：僅 OpenAI chat（含翻譯後）需要顯式 stream_options；
-    // Responses / Anthropic / Gemini 加此欄位會被上游 400。
-    let want_usage_opt = should_inject_usage(translated, input.path_hint);
+    // 流式請求強制索取用量：**只有送出去的是 OpenAI chat 形狀時才需要**；
+    // Responses / Anthropic / Gemini 端點加這個欄位會被上游 400。
+    // 判斷看 `kind`（翻到哪種協議），不能只看「有沒有翻譯」——見 util.rs 的註解。
+    let want_usage_opt = should_inject_usage(kind, input.path_hint);
     let (bytes, model) = match translate_forward_body(
         input.conn,
         input.provider_id,
@@ -383,8 +384,9 @@ pub(super) fn upstream_for<'a>(
     authed: &keys::AuthedKey,
     translated: bool,
     app: &str,
+    target_fmt: TargetFmt,
 ) -> Upstream<'a> {
-    let (url, headers) = build_upstream_target(parts, authed, translated, app);
+    let (url, headers) = build_upstream_target(parts, authed, translated, app, target_fmt);
     Upstream {
         client: &ctx.client,
         method: parts.method.clone(),

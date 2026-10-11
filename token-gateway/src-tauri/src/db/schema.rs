@@ -143,6 +143,11 @@ CREATE TABLE IF NOT EXISTS provider_models (
     reasoning TEXT NOT NULL DEFAULT 'unset',
     ord INTEGER NOT NULL DEFAULT 0,
     enabled INTEGER NOT NULL DEFAULT 1,
+    -- 逐模型協議（2026-10-10，schema v17；舊庫由 open.rs 補列）。
+    -- 空 = 未偵測。協議是「模型在某個上游」的屬性，不是「來源」的屬性 ——
+    -- opencode-go 同一個 base_url 底下 Claude 走 /messages、其餘走
+    -- /chat/completions。見 models/protocol_probe.rs。
+    protocol TEXT NOT NULL DEFAULT '',
     UNIQUE(provider_id, display_name)
 );
 CREATE INDEX IF NOT EXISTS idx_models_lookup

@@ -79,7 +79,9 @@ use {
     retry::{send_with_strip_retry, RetryCtx, SendOutcome, Upstream},
     reqctx::ReqCtx,
     stream::{
-        relay_sse, responses_line_events, sse_response, AnthropicRelay, ResponsesRelay, StreamLog,
+        anthropic_line_to_chat, anthropic_line_to_responses, relay_sse, responses_line_events,
+        sse_response, AnthropicRelay, ChatToAnthropicRelay, ResponsesFromAnthropicRelay,
+        ResponsesRelay, StreamLog,
     },
     strip::{
         is_encrypted_content_rejected, is_stateless, parse_body_json, parse_unknown_fields,
@@ -208,9 +210,13 @@ async fn proxy_handler(State(ctx): State<ProxyCtx>, req: axum::http::Request<Bod
     // 的來源一併排進佇列，當前來源連不上或 5xx 時可以換手。見 `failover.rs`。
     let in_fmt = InFmt::from_path(&path_hint);
     let others = resolve_model_providers(&conn, &model_raw, authed.provider_id);
+    // 逐模型協議（空 = 未偵測）。這是「一個來源服務多種協議」的關鍵 ——
+    // 訂閱制的 opencode-go 單一 base_url 底下 Claude 走 /messages、其餘走 chat。
+    let bound_protocol = crate::models::model_protocol(&conn, authed.provider_id, &model_raw);
     let attempts = plan_attempts(
         authed.provider_id,
         &authed.provider_api_format,
+        bound_protocol.as_deref(),
         in_fmt,
         learned_format(
             ctx.db_path.as_path(),
@@ -270,7 +276,7 @@ async fn proxy_handler(State(ctx): State<ProxyCtx>, req: axum::http::Request<Bod
         };
         let translated = prep.translated;
         // ---- 組裝上游請求（翻譯時固定打 /chat/completions）
-        let up = upstream_for(&ctx, &parts, &authed, translated, &app);
+        let up = upstream_for(&ctx, &parts, &authed, translated, &app, prep.target_fmt);
         let outcome = send_with_strip_retry(
             &RetryCtx {
                 req: rc,

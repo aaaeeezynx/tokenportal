@@ -82,6 +82,10 @@ fn other_sides(fmt: &str) -> &'static [&'static str] {
         "openai-chat" => &["openai-responses"],
         "openai-responses" => &["openai-chat"],
         "mixed" => &["openai-chat", "openai-responses"],
+        // 理論上 `formats_for` 會先展開 auto，這裡不會被走到；留著是防禦
+        "auto" => &["openai-chat", "openai-responses", "anthropic"],
+        // 明確宣告 anthropic 的來源：另一邊是 chat（Responses→Anthropic 沒翻譯器）
+        "anthropic" => &["openai-chat"],
         _ => &[],
     }
 }
@@ -101,13 +105,56 @@ fn flip_is_useful(in_fmt: InFmt, from: &str, to: &str) -> bool {
     }
 }
 
+/// 一個來源在這個模型上的協議候選（保序、去重）。
+///
+/// **有效協議 = 逐模型實測優先，其次來源宣告。**
+///
+/// 為什麼要有逐模型這一層：協議是「某個模型在某個上游」的屬性，不是「來源」的
+/// 屬性。訂閱制的 opencode-go 單一 base_url、單一金鑰底下，`claude-haiku-5-5`
+/// 只吃 Anthropic Messages、其餘模型吃 OpenAI chat。用來源級欄位描述不了，
+/// 使用者只能把同一個訂閱拆成兩個來源 —— 金鑰重複，App 的用量／成本／健康度
+/// 統計也被切碎（而上游那邊本來就只有一份額度）。
+///
+/// `auto`（或兩者都空）代表**不知道**：那就依入站格式先試最自然的那一種
+/// ——客戶端自己用的協議，通常就是這個模型支援的協議 ——再試其餘兩種。
+/// 這個順序讓「一個來源服務多種客戶端」在第一次請求就大概率命中，
+/// 猜錯也只是一次失敗往返，之後由 `learn_format` 記住。
+fn formats_for(in_fmt: InFmt, declared: &str, model_protocol: Option<&str>) -> Vec<String> {
+    let explicit = model_protocol
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .unwrap_or_else(|| declared.trim());
+    if explicit.is_empty() || explicit.eq_ignore_ascii_case("auto") {
+        let primary = match in_fmt {
+            InFmt::Anthropic => "anthropic",
+            InFmt::Responses => "openai-responses",
+            InFmt::OpenAi => "openai-chat",
+            // 中性路徑（/v1/models 之類）：不猜，照 chat 先試
+            _ => "openai-chat",
+        };
+        let mut v = vec![primary.to_string()];
+        for p in ["openai-chat", "openai-responses", "anthropic"] {
+            if p != primary {
+                v.push(p.to_string());
+            }
+        }
+        return v;
+    }
+    let mut v = vec![explicit.to_string()];
+    for f in other_sides(explicit) {
+        v.push(f.to_string());
+    }
+    v
+}
+
 /// 排候選佇列（去重、保序）。
 ///
-/// 順序：① 上次學到的協議 ② 綁定來源的宣告協議 ③ 綁定來源的另一種協議
-/// ④ 其他也登記了這個模型的來源（各自：宣告協議 → 另一種協議，依 priority/id 排序）。
+/// 順序：① 上次學到的協議 ② 綁定來源的逐模型協議／宣告協議 ③ 該來源的其餘協議
+/// ④ 其他也登記了這個模型的來源（各自同一套順序，依 priority/id 排序）。
 pub(super) fn plan_attempts(
     bound_pid: i64,
     bound_fmt: &str,
+    bound_model_protocol: Option<&str>,
     in_fmt: InFmt,
     learned: Option<&str>,
     others: &[ReroutedProvider],
@@ -129,16 +176,46 @@ pub(super) fn plan_attempts(
     if let Some(l) = learned {
         add(&mut out, bound_pid, l);
     }
-    add(&mut out, bound_pid, bound_fmt);
-    for f in other_sides(bound_fmt) {
-        if flip_is_useful(in_fmt, bound_fmt, f) {
+    // 第一個候選**無條件**排入：矩陣若不支援這一格（例如 Gemini 入站、或
+    // Responses 入站碰上 anthropic），要讓它帶著那格專屬的明確訊息回報，
+    // 而不是被靜默濾掉、最後只回一句籠統的「所有協議都不被接受」。
+    //
+    // 其餘候選的比較基準是**第一個候選**，不是 `bound_fmt` —— 有逐模型協議時
+    // 兩者不同。拿來源宣告去比會誤判：宣告 `mixed` + 模型協議 `anthropic` 時，
+    // `(Anthropic, Mixed)` 與 `(Anthropic, OpenAiChat)` 都是 `AnthropicToChat`
+    // （同一種翻譯），於是「換到 chat」被當成沒用 —— 但實際上第一個候選是
+    // `anthropic`（直通 `/messages`），換到 chat 是**完全不同的路徑**。
+    //
+    // `auto` 沒有「原本的協議」可比，不能套 `flip_is_useful` —— 它的第一邊會是
+    // Auto → Err → 恆為 false，候選會全被濾掉、排出空清單。改成直接問矩陣。
+    let auto_mode = bound_fmt.trim().is_empty() || bound_fmt.eq_ignore_ascii_case("auto");
+    let cands = formats_for(in_fmt, bound_fmt, bound_model_protocol);
+    let from = cands.first().cloned().unwrap_or_default();
+    for (idx, f) in cands.iter().enumerate() {
+        let keep = if idx == 0 {
+            true
+        } else if auto_mode {
+            resolve_trans_kind(in_fmt, TargetFmt::from_db(f)).is_ok()
+        } else {
+            flip_is_useful(in_fmt, &from, f)
+        };
+        if keep {
             add(&mut out, bound_pid, f);
         }
     }
     for p in others {
-        add(&mut out, p.id, &p.format);
-        for f in other_sides(&p.format) {
-            if flip_is_useful(in_fmt, &p.format, f) {
+        let p_auto = p.format.trim().is_empty() || p.format.eq_ignore_ascii_case("auto");
+        let pcands = formats_for(in_fmt, &p.format, Some(&p.protocol));
+        let pfrom = pcands.first().cloned().unwrap_or_default();
+        for (idx, f) in pcands.iter().enumerate() {
+            let keep = if idx == 0 {
+                true
+            } else if p_auto {
+                resolve_trans_kind(in_fmt, TargetFmt::from_db(f)).is_ok()
+            } else {
+                flip_is_useful(in_fmt, &pfrom, f)
+            };
+            if keep {
                 add(&mut out, p.id, f);
             }
         }
@@ -151,12 +228,18 @@ mod tests {
     use super::*;
 
     fn prov(id: i64, fmt: &str) -> ReroutedProvider {
+        prov_with(id, fmt, "")
+    }
+
+    /// 帶逐模型協議的來源。
+    fn prov_with(id: i64, fmt: &str, protocol: &str) -> ReroutedProvider {
         ReroutedProvider {
             id,
             base_url: format!("http://127.0.0.1:{id}"),
             api_key: "k".into(),
             scheme: "bearer".into(),
             format: fmt.into(),
+            protocol: protocol.into(),
         }
     }
 
@@ -169,7 +252,7 @@ mod tests {
     /// Codex（Responses 入站）：來源宣告 chat 但模型只在 responses 上架 → 補一條直通候選。
     #[test]
     fn responses_inbound_gets_responses_fallback_for_chat_provider() {
-        let a = plan_attempts(7, "openai-chat", InFmt::Responses, None, &[]);
+        let a = plan_attempts(7, "openai-chat", None, InFmt::Responses, None, &[]);
         assert_eq!(
             ids(&a),
             vec![(7, "openai-chat".into()), (7, "openai-responses".into())]
@@ -179,7 +262,7 @@ mod tests {
     /// `mixed` 是「兩種端點都直通」，但 chat-only 的模型要換成 chat（翻譯那條）。
     #[test]
     fn mixed_provider_gets_chat_fallback_for_chat_only_models() {
-        let a = plan_attempts(7, "mixed", InFmt::Responses, None, &[]);
+        let a = plan_attempts(7, "mixed", None, InFmt::Responses, None, &[]);
         assert_eq!(
             ids(&a),
             vec![(7, "mixed".into()), (7, "openai-chat".into())]
@@ -189,16 +272,16 @@ mod tests {
     /// Claude Code（Anthropic 入站）：翻 responses 沒有翻譯器 → 不要排無效候選。
     #[test]
     fn anthropic_inbound_has_no_responses_fallback() {
-        let a = plan_attempts(7, "openai-chat", InFmt::Anthropic, None, &[]);
+        let a = plan_attempts(7, "openai-chat", None, InFmt::Anthropic, None, &[]);
         assert_eq!(ids(&a), vec![(7, "openai-chat".into())]);
     }
 
     /// 學到的協議排第一；與宣告相同時去重。
     #[test]
     fn learned_format_goes_first_and_dedupes() {
-        let a = plan_attempts(7, "openai-chat", InFmt::Responses, Some("openai-responses"), &[]);
+        let a = plan_attempts(7, "openai-chat", None, InFmt::Responses, Some("openai-responses"), &[]);
         assert_eq!(ids(&a)[0], (7, "openai-responses".into()));
-        let b = plan_attempts(7, "openai-chat", InFmt::Responses, Some("openai-chat"), &[]);
+        let b = plan_attempts(7, "openai-chat", None, InFmt::Responses, Some("openai-chat"), &[]);
         assert_eq!(
             ids(&b),
             vec![(7, "openai-chat".into()), (7, "openai-responses".into())]
@@ -209,7 +292,7 @@ mod tests {
     #[test]
     fn other_providers_come_after_bound_one() {
         let others = vec![prov(3, "openai-chat"), prov(5, "openai-responses")];
-        let a = plan_attempts(7, "openai-chat", InFmt::OpenAi, None, &others);
+        let a = plan_attempts(7, "openai-chat", None, InFmt::OpenAi, None, &others);
         // chat 入站翻 responses 是矩陣明定的錯誤（B6），所以只排各來源的宣告協議。
         assert_eq!(
             ids(&a),
@@ -221,9 +304,110 @@ mod tests {
         );
     }
 
+    // ───────── 逐模型協議與 auto（2026-10-10）─────────
+
+    /// ★ 核心：**逐模型協議優先於來源宣告**。
+    ///
+    /// 這是「訂閱制上游單一來源、多種協議」的關鍵 —— opencode-go 宣告 `mixed`，
+    /// 但 `claude-haiku-5-5` 實測只走 Anthropic Messages。
     #[test]
-    fn learned_protocol_persists_per_db_and_declared_format() {
-        let dir = tempfile::tempdir().unwrap();
+    fn per_model_protocol_wins_over_declared_format() {
+        // Claude Code（Anthropic 入站）用那個模型 → 第一個候選就該是 anthropic
+        let a = plan_attempts(7, "mixed", Some("anthropic"), InFmt::Anthropic, None, &[]);
+        assert_eq!(ids(&a)[0], (7, "anthropic".into()), "{:?}", ids(&a));
+        // 其餘候選：chat 可以（有 Anthropic→Chat 翻譯器），responses 不行
+        assert!(ids(&a).contains(&(7, "openai-chat".into())));
+        assert!(!ids(&a).contains(&(7, "openai-responses".into())));
+    }
+
+    /// ★ `auto` + Anthropic 入站：先試 anthropic（Claude Code 用 Claude 模型的路）。
+    ///
+    /// 舊行為下，mixed 來源的 Anthropic 請求一律被翻成 chat 送到
+    /// `/chat/completions`，於是 Anthropic-only 的模型必定 400。
+    #[test]
+    fn auto_prefers_the_clients_own_protocol() {
+        let a = plan_attempts(7, "auto", None, InFmt::Anthropic, None, &[]);
+        assert_eq!(ids(&a)[0], (7, "anthropic".into()), "{:?}", ids(&a));
+        assert!(ids(&a).contains(&(7, "openai-chat".into())));
+        assert!(
+            !ids(&a).contains(&(7, "openai-responses".into())),
+            "Anthropic→Responses 沒有翻譯器，不該排無效候選：{:?}",
+            ids(&a)
+        );
+    }
+
+    /// `auto` + Codex（Responses 入站）：先直通 responses，再翻 chat，最後
+    /// 才是 anthropic（2026-10-10 反向翻譯器實作後才排得進來）。
+    #[test]
+    fn auto_for_codex_prefers_responses_then_chat_then_anthropic() {
+        let a = plan_attempts(7, "auto", None, InFmt::Responses, None, &[]);
+        assert_eq!(
+            ids(&a),
+            vec![
+                (7, "openai-responses".into()),
+                (7, "openai-chat".into()),
+                (7, "anthropic".into())
+            ],
+            "anthropic 排最後：它是兩跳，比直通與單跳貴"
+        );
+    }
+
+    /// `auto` + OpenAI chat 入站：先 chat，再 anthropic
+    /// （chat→responses 是矩陣明定的錯誤，不排）。
+    #[test]
+    fn auto_for_openai_client_schedules_chat_then_anthropic() {
+        let a = plan_attempts(7, "auto", None, InFmt::OpenAi, None, &[]);
+        assert_eq!(
+            ids(&a),
+            vec![(7, "openai-chat".into()), (7, "anthropic".into())],
+            "{:?}",
+            ids(&a)
+        );
+    }
+
+    /// `auto` 不可以排出空清單（`flip_is_useful` 的第一邊會是 Err）。
+    #[test]
+    fn auto_never_yields_an_empty_plan() {
+        for in_fmt in [InFmt::Anthropic, InFmt::Responses, InFmt::OpenAi] {
+            let a = plan_attempts(7, "auto", None, in_fmt, None, &[]);
+            assert!(!a.is_empty(), "auto + {in_fmt:?} 排出了空清單");
+        }
+    }
+
+    /// 逐模型協議也適用於**其他來源**（跨來源換手時各自用自己的協議）。
+    #[test]
+    fn other_providers_use_their_own_model_protocol() {
+        let others = vec![
+            prov_with(3, "auto", "anthropic"),
+            prov_with(5, "auto", "openai-chat"),
+        ];
+        let a = plan_attempts(7, "auto", None, InFmt::Anthropic, None, &others);
+        let v = ids(&a);
+        assert_eq!(v[0], (7, "anthropic".into()));
+        // 綁定來源自己的 fallback 排在**其他來源之前**（來源換手是備援，不是首選）
+        assert_eq!(v[1], (7, "openai-chat".into()), "{v:?}");
+        // 來源 3 的模型是 anthropic-only → 它的第一候選是 anthropic
+        let p3 = v.iter().position(|x| *x == (3, "anthropic".into()));
+        assert!(p3.is_some(), "來源 3 應以 anthropic 開頭：{v:?}");
+        // 來源 5 是 chat，且排在來源 3 之後
+        let p5 = v.iter().position(|x| *x == (5, "openai-chat".into()));
+        assert!(p5.is_some() && p5 > p3, "{v:?}");
+    }
+
+    /// 明確宣告 anthropic 的來源：另一邊只排 chat（Responses→Anthropic 沒翻譯器）。
+    #[test]
+    fn declared_anthropic_provider_falls_back_to_chat() {
+        let a = plan_attempts(7, "anthropic", None, InFmt::Anthropic, None, &[]);
+        assert_eq!(
+            ids(&a),
+            vec![(7, "anthropic".into()), (7, "openai-chat".into())],
+            "{:?}",
+            ids(&a)
+        );
+    }
+
+    #[test]
+    fn learned_protocol_persists_per_db_and_declared_format() {        let dir = tempfile::tempdir().unwrap();
         let a = dir.path().join("a.db");
         let b = dir.path().join("b.db");
         crate::db::open_and_ensure(&a).unwrap();

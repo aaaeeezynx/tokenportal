@@ -75,6 +75,73 @@ pub(super) async fn finish_response(upstream: reqwest::Response, f: &FinishCtx<'
         // 流式：邊轉邊解析，結束寫日誌（翻譯分支按 kind 轉換事件形狀）
         let (tx, rx) =
             tokio::sync::mpsc::channel::<Result<axum::body::Bytes, axum::Error>>(64);
+        if f.kind == TransKind::ResponsesToAnthropic {
+            // Anthropic 上游 → Codex：Anthropic 事件 → Chat chunk → Responses 事件
+            let appv = f.req.app.to_string();
+            let echo = f.req.model_raw.to_string();
+            let logm = log_fallback.clone();
+            let customs = custom_tools.clone();
+            tokio::spawn(async move {
+                let on_line = |s: &mut ResponsesFromAnthropicRelay, t: &str| {
+                    anthropic_line_to_responses(t, s, &echo, &customs)
+                };
+                let on_finish = |s: &mut ResponsesFromAnthropicRelay| {
+                    crate::translate::responses_stream_finish(
+                        &mut s.tstate,
+                        &echo,
+                        &s.acc,
+                        &customs,
+                    )
+                };
+                let st = relay_sse(
+                    upstream,
+                    &tx,
+                    ResponsesFromAnthropicRelay::default(),
+                    on_line,
+                    on_finish,
+                )
+                .await;
+                StreamLog::new(
+                    &db_path,
+                    &appv,
+                    provider_id,
+                    key_id,
+                    latency_ms,
+                    status.as_u16(),
+                )
+                .write(&logm, &st.acc);
+            });
+            return sse_response(builder, rx);
+        }
+        if f.kind == TransKind::ChatToAnthropic {
+            // Anthropic 上游 → Chat 客戶端
+            let appv = f.req.app.to_string();
+            let logm = log_fallback.clone();
+            tokio::spawn(async move {
+                let on_line = |s: &mut ChatToAnthropicRelay, t: &str| {
+                    anthropic_line_to_chat(t, &mut s.astate, &mut s.acc)
+                };
+                let on_finish = |_s: &mut ChatToAnthropicRelay| Vec::new();
+                let st = relay_sse(
+                    upstream,
+                    &tx,
+                    ChatToAnthropicRelay::default(),
+                    on_line,
+                    on_finish,
+                )
+                .await;
+                StreamLog::new(
+                    &db_path,
+                    &appv,
+                    provider_id,
+                    key_id,
+                    latency_ms,
+                    status.as_u16(),
+                )
+                .write(&logm, &st.acc);
+            });
+            return sse_response(builder, rx);
+        }
         if f.kind == TransKind::ResponsesToChat {
             // Responses 流式：chat chunk → Responses 事件；流結束補發 completed/failed
             let appv = f.req.app.to_string();
@@ -211,13 +278,24 @@ pub(super) async fn finish_response(upstream: reqwest::Response, f: &FinishCtx<'
         extract_usage(&v, &mut usage);
         // 僅成功狀態才轉換形狀；錯誤回包原樣透出（客戶端按狀態碼讀錯誤）
         if f.translated && status.is_success() {
-            if f.kind == TransKind::ResponsesToChat {
-                let r = crate::translate::openai_to_responses(&v, f.req.model_raw, &custom_tools);
-                out_bytes = serde_json::to_vec(&r).unwrap_or(out_bytes);
+            // Anthropic 上游：先翻成 Chat，再翻成客戶端格式（兩跳的第二段）
+            let from_anthropic = matches!(
+                f.kind,
+                TransKind::ChatToAnthropic | TransKind::ResponsesToAnthropic
+            );
+            let chat = if from_anthropic {
+                crate::translate::anthropic_to_chat_resp(&v, f.req.model_raw)
             } else {
-                let a = crate::translate::openai_to_anthropic(&v, f.req.model_raw);
-                out_bytes = serde_json::to_vec(&a).unwrap_or(out_bytes);
-            }
+                v.clone()
+            };
+            let r = match f.kind {
+                TransKind::ResponsesToChat | TransKind::ResponsesToAnthropic => {
+                    crate::translate::openai_to_responses(&chat, f.req.model_raw, &custom_tools)
+                }
+                TransKind::ChatToAnthropic => chat,
+                _ => crate::translate::openai_to_anthropic(&chat, f.req.model_raw),
+            };
+            out_bytes = serde_json::to_vec(&r).unwrap_or(out_bytes);
         }
     }
     let model = usage.model.clone().unwrap_or(log_fallback);
