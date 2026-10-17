@@ -187,39 +187,58 @@ export function ModelPanel(props: { provider: Provider; rowsClassName?: string; 
       </div>
       <div className="mb-3 flex items-center gap-2">
         <button
-          // `h-6` ＋ `whitespace-nowrap`：標籤在「偵測中…」與平常之間切換時，
-          // **高度永遠是一行**，不會因為字數變化被擠成兩行。
-          className="btn-ghost inline-flex h-6 shrink-0 items-center px-3 text-[11px] leading-none whitespace-nowrap disabled:opacity-40"
+          // 尺寸**完全對齊上方「取得模型清單」**：`px-3.5 py-1.5 text-[13px]`。
+          // `whitespace-nowrap` 讓「偵測中…」與平常都是同一行高，不會被擠成兩行。
+          className="btn-ghost flex shrink-0 items-center gap-1.5 px-3.5 py-1.5 text-[13px] whitespace-nowrap disabled:opacity-40"
           disabled={probeAll.isPending || (rows.data || []).length === 0}
           title="依序實測本來源每個模型支援哪些思考強度，並帶入設定（會對上游發真正的請求）"
           onClick={() => probeAll.mutate()}
         >
           {probeAll.isPending ? "偵測中…" : "偵測思考強度"}
         </button>
-        <span className="text-[11px] text-fg/30">
-          逐一實測，約 9 筆請求／模型；只改動思考等級，不動其他設定
+        <span className="min-w-0 flex-1 text-[10px] leading-snug text-fg/25">
+          約 9 筆請求／模型
         </span>
       </div>
       {probeAll.isPending && (
-        <div className="mb-3">
+        <div className="relative mb-3">
           {/*
-            與用量頁的訂閱圓環同一套語言（見 `usage/usageQuota.tsx` 的 QuotaRing）：
-            同一條軌道色 `rgba(255,255,255,0.08)`、同一個 `--mac-accent`、
-            同樣的 0.6s `--mac-ease` 過渡與 accent 光暈 —— 圓環換成橫條而已。
+            與用量頁的訂閱圓環同一套語言（見 `usage/usageQuota.tsx` 的 QuotaRing），
+            圓環換成橫條。
+
+            **光暈必須畫在軌道外面**：軌道為了切圓角用了 `overflow-hidden`，
+            在那裡面做的 drop-shadow 會被整條裁掉（第一版就是這樣，所以看不出光）。
+
+            三層由下而上：
+            1. 光暈暈染 —— 比條身高的模糊色塊，外溢成光
+            2. 軌道 —— 半透明，看得出「還剩多少」
+            3. 填充 —— 強調色**漸層**（左實右透），透明感才看得出來
           */}
           <div
-            className="relative h-[3px] w-full overflow-hidden rounded-full"
-            style={{ background: "rgba(255,255,255,0.08)" }}
+            className="pointer-events-none absolute left-0 top-1/2 h-3 -translate-y-1/2 rounded-full"
+            style={{
+              width: `${total > 0 ? (probeDone / total) * 100 : 0}%`,
+              background: "var(--mac-accent)",
+              filter: "blur(7px)",
+              opacity: 0.75,
+              transition: "width 0.6s var(--mac-ease)",
+            }}
+          />
+          <div
+            className="relative h-1.5 w-full overflow-hidden rounded-full"
+            style={{
+              background: "rgba(255,255,255,0.13)",
+              boxShadow: "inset 0 0 0 0.5px rgba(255,255,255,0.06)",
+            }}
             title="偵測進度"
           >
             <div
               className="absolute inset-y-0 left-0 rounded-full"
               style={{
                 width: `${total > 0 ? (probeDone / total) * 100 : 0}%`,
-                background: "var(--mac-accent)",
+                background:
+                  "linear-gradient(90deg, color-mix(in srgb, var(--mac-accent) 100%, transparent) 0%, color-mix(in srgb, var(--mac-accent) 45%, transparent) 100%)",
                 transition: "width 0.6s var(--mac-ease)",
-                filter:
-                  "drop-shadow(0 0 4px color-mix(in srgb, var(--mac-accent) 40%, transparent))",
               }}
             />
           </div>
