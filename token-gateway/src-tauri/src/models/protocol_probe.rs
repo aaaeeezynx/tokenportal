@@ -84,6 +84,7 @@ pub struct ProtocolProbeReport {
     /// 通的協議；都沒有就是 `None`
     pub protocol: Option<String>,
     pub attempts: Vec<ProtocolAttempt>,
+    /// 實際送出的 HTTP 請求數（Gemini 會試多個路徑形狀，所以可能大於協議數）
     pub requests: usize,
     pub checked_at: i64,
     /// 結論是否**確定**。
@@ -116,8 +117,8 @@ fn summary_for(protocol: Option<&str>, definitive: bool, saw_inconclusive: bool)
              Claude Code 直接可用，Codex／OpenAI 格式的客戶端由網關自動翻譯"
             .into(),
         Some("gemini") => "這個模型走 Gemini 原生協議（模型名在路徑裡：\
-             /models/{model}:generateContent）；只有 Gemini 格式的客戶端可以直接用它\
-             （OpenAI 系客戶端要等 OpenAI ⇄ Gemini 翻譯器）"
+             /models/{model}:generateContent）；Gemini 格式的客戶端直接可用，\
+             Codex／OpenAI 格式的客戶端由網關自動翻譯"
             .into(),
         _ => "四種協議都不通：請先確認模型名與金鑰（上游對不存在的模型通常回\
               Model is unavailable，對協議不對則回 ModelProtocolUnsupported）"
@@ -125,11 +126,22 @@ fn summary_for(protocol: Option<&str>, definitive: bool, saw_inconclusive: bool)
     }
 }
 
-/// 依協議組出請求（形狀各不相同）。
-fn build_protocol_request(cfg: &ProbeCfg, protocol: &str) -> (String, serde_json::Value) {
+/// 依協議組出請求：**一組候選 URL**（依序試）＋ 請求體。
+///
+/// 為什麼 Gemini 要一組：它的模型名在路徑裡，而**前綴各家的寫法不同**。
+/// 實測 opencode-go 的文件端點是
+/// `https://opencode.ai/inference/go/google/v1beta/models/{m}:generateContent`
+/// —— 那個 `/google/v1beta` 不是「base 之後再加字尾」能拼出來的。
+/// 寫死一種形狀會讓探測把可用的 Gemini 模型誤報成「四種協議都不通」
+///（2026-10-11 的真實誤判：`gemini-4-argon-contributor`）。
+///
+/// 其餘三種協議的端點寫法一致，所以只給一個。
+fn build_protocol_request(cfg: &ProbeCfg, protocol: &str) -> (Vec<String>, serde_json::Value) {
+    let base = cfg.base.trim_end_matches('/');
+    let m = cfg.actual_model.trim().trim_start_matches("models/");
     match protocol {
         "responses" => (
-            format!("{}/responses", cfg.base),
+            vec![format!("{base}/responses")],
             serde_json::json!({
                 "model": cfg.actual_model,
                 "input": [{"type": "message", "role": "user",
@@ -139,28 +151,28 @@ fn build_protocol_request(cfg: &ProbeCfg, protocol: &str) -> (String, serde_json
             }),
         ),
         "anthropic" => (
-            format!("{}/messages", cfg.base),
+            vec![format!("{base}/messages")],
             serde_json::json!({
                 "model": cfg.actual_model,
                 "max_tokens": 4,
                 "messages": [{"role": "user", "content": "hi"}],
             }),
         ),
-        // Gemini 原生：**模型名在路徑裡**（`/models/{model}:generateContent`），
-        // 內容是 `parts[]`、角色是 `user`/`model`。這是它跟另外三種最不一樣的地方。
-        "gemini" => {
-            // 使用者填的可能是 `models/gemini-x` 或單純 `gemini-x`，兩種都收
-            let m = cfg.actual_model.trim().trim_start_matches("models/");
-            (
-                format!("{}/models/{m}:generateContent", cfg.base),
-                serde_json::json!({
-                    "contents": [{"role": "user", "parts": [{"text": "hi"}]}],
-                    "generationConfig": {"maxOutputTokens": 4},
-                }),
-            )
-        }
+        // Gemini 原生：**模型名在路徑裡**，內容是 `parts[]`、角色是 `user`/`model`。
+        // 候選順序：標準形 → 協議前綴形（opencode-go 的 `/google/v1beta`）→ 補 v1beta。
+        "gemini" => (
+            vec![
+                format!("{base}/models/{m}:generateContent"),
+                format!("{base}/google/v1beta/models/{m}:generateContent"),
+                format!("{base}/v1beta/models/{m}:generateContent"),
+            ],
+            serde_json::json!({
+                "contents": [{"role": "user", "parts": [{"text": "hi"}]}],
+                "generationConfig": {"maxOutputTokens": 4},
+            }),
+        ),
         _ => (
-            format!("{}/chat/completions", cfg.base),
+            vec![format!("{base}/chat/completions")],
             serde_json::json!({
                 "model": cfg.actual_model,
                 "messages": [{"role": "user", "content": "hi"}],
@@ -175,37 +187,53 @@ fn build_protocol_request(cfg: &ProbeCfg, protocol: &str) -> (String, serde_json
 ///
 /// 鑑權依**協議**決定，不是依來源：Anthropic 的 `/messages` 只認 `x-api-key`
 ///（實測 opencode-go 用 Bearer 回 401），Gemini 只認 `x-goog-api-key`。
-fn send_protocol(cfg: &ProbeCfg, protocol: &str) -> Result<(u16, String), String> {
-    let (url, body) = build_protocol_request(cfg, protocol);
+/// 回傳 `(狀態, 回應本文, 實際送出的請求數)` —— Gemini 可能試多個路徑形狀。
+fn send_protocol(cfg: &ProbeCfg, protocol: &str) -> Result<(u16, String, usize), String> {
+    let (urls, body) = build_protocol_request(cfg, protocol);
     let c = client()?;
-    let mut req = c
-        .post(&url)
-        .json(&body)
-        .header("x-opencode-session", "tokentoll-probe")
-        .header("User-Agent", "tokentoll-probe/0.1");
-    req = if protocol == "anthropic" {
-        req.header("x-api-key", &cfg.key)
-            .header("anthropic-version", "2023-06-01")
-    } else if protocol == "gemini" {
-        req.header("x-goog-api-key", &cfg.key)
-    } else {
-        match cfg.scheme.as_str() {
-            "goog-key" => req.header("x-goog-api-key", &cfg.key),
-            "anthropic" => req
-                .header("x-api-key", &cfg.key)
-                .header("anthropic-version", "2023-06-01"),
-            _ => req.bearer_auth(&cfg.key),
-        }
-    };
-    let resp = req.send().map_err(|e| {
-        if e.is_timeout() {
-            "上游逾時".to_string()
+    // 逐一試候選 URL：2xx 就採用；404（**路由不存在**）換下一個。
+    // 非 404 的失敗（例如 400 ModelProtocolUnsupported）代表「這條路由存在、
+    // 但模型不收」—— 那就是這個協議的結論，不必再試其他形狀。
+    let mut last: Option<(u16, String)> = None;
+    let mut attempts = 0usize;
+    for url in &urls {
+        attempts += 1;
+        let mut req = c
+            .post(url)
+            .json(&body)
+            .header("x-opencode-session", "tokentoll-probe")
+            .header("User-Agent", "tokentoll-probe/0.1");
+        req = if protocol == "anthropic" {
+            req.header("x-api-key", &cfg.key)
+                .header("anthropic-version", "2023-06-01")
+        } else if protocol == "gemini" {
+            req.header("x-goog-api-key", &cfg.key)
         } else {
-            format!("連接上游失敗：{e}")
+            match cfg.scheme.as_str() {
+                "goog-key" => req.header("x-goog-api-key", &cfg.key),
+                "anthropic" => req
+                    .header("x-api-key", &cfg.key)
+                    .header("anthropic-version", "2023-06-01"),
+                _ => req.bearer_auth(&cfg.key),
+            }
+        };
+        let resp = req.send().map_err(|e| {
+            if e.is_timeout() {
+                "上游逾時".to_string()
+            } else {
+                format!("連接上游失敗：{e}")
+            }
+        })?;
+        let status = resp.status().as_u16();
+        let text = resp.text().unwrap_or_default();
+        if (200..300).contains(&status) || status != 404 {
+            return Ok((status, text, attempts));
         }
-    })?;
-    let status = resp.status().as_u16();
-    Ok((status, resp.text().unwrap_or_default()))
+        last = Some((status, text));
+    }
+    // 全部 404（或候選是空的）→ 回最後一個
+    let (st, tx) = last.unwrap_or((404, "所有候選路徑都不存在".to_string()));
+    Ok((st, tx, attempts))
 }
 
 /// 純網路段：逐一試四種協議，找出這個模型實際走哪一個。
@@ -218,10 +246,15 @@ pub(crate) fn probe_protocol_http(cfg: &ProbeCfg) -> ProtocolProbeReport {
     let mut saw_inconclusive = false;
     // 來源若明確宣告了某種協議，先試它（省請求；`auto`/`mixed` 保持原順序）
     for p in probe_order(&cfg.format) {
-        rep.requests += 1;
         let (status, detail) = match send_protocol(cfg, p) {
-            Ok((s, text)) => (s, text.chars().take(160).collect::<String>()),
-            Err(e) => (0, e),
+            Ok((s, text, sent)) => {
+                rep.requests += sent;
+                (s, text.chars().take(160).collect::<String>())
+            }
+            Err(e) => {
+                rep.requests += 1;
+                (0, e)
+            }
         };
         let outcome = classify(status);
         rep.attempts.push(ProtocolAttempt {

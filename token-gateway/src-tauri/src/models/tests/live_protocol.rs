@@ -9,6 +9,59 @@
 
 use super::*;
 
+/// ★ 真機：**探測器自己要能透過「多路徑形狀」找到 Gemini**。
+///
+/// 2026-10-11 的誤判：opencode-go 的 `gemini-4-argon-contributor` 在站上可用，
+/// 但探測把標準形 `/models/{m}:generateContent` 寫死，於是打不到真正的
+/// `/google/v1beta/models/{m}:generateContent`，誤報「四種協議都不通」。
+///
+/// 這裡用**文件記載的 base**（`https://opencode.ai/inference/go`）跑一次，
+/// 斷言探測器自己找到 `gemini` —— 而且是在第二個形狀才中。
+///
+/// `cargo test --offline --lib -- --ignored live_probe_gemini --nocapture`
+#[test]
+#[ignore = "live: 需要 opencode-go 金鑰（會對上游發幾筆極小請求）"]
+fn live_probe_finds_gemini_through_the_protocol_prefixed_path() {
+    let db = dirs::data_dir()
+        .expect("data_dir")
+        .join("com.tokencounter.gateway")
+        .join("app.db");
+    let conn = crate::db::open_and_ensure(&db).expect("打開真實資料庫");
+    let key: String = match conn.query_row("SELECT api_key FROM providers WHERE id = 22", [], |r| {
+        r.get(0)
+    }) {
+        Ok(k) => k,
+        Err(_) => {
+            println!("（跳過：找不到 source 22）");
+            return;
+        }
+    };
+
+    let cfg = ProbeCfg {
+        // 文件記載的 base（不是 /zen/go/v1）
+        base: "https://opencode.ai/inference/go".into(),
+        key,
+        scheme: "bearer".into(),
+        actual_model: "gemini-4-argon-contributor".into(),
+        format: "gemini".into(),
+    };
+    let rep = probe_protocol_http(&cfg);
+    println!(
+        "protocol={:?} requests={} definitive={}\n  {}",
+        rep.protocol, rep.requests, rep.definitive, rep.summary
+    );
+    for a in &rep.attempts {
+        println!("    {} -> HTTP {} ({})", a.protocol, a.status, a.outcome);
+    }
+    assert_eq!(
+        rep.protocol.as_deref(),
+        Some("gemini"),
+        "探測器應該透過 /google/v1beta 那個形狀找到它；{rep:?}"
+    );
+    // 第一個形狀（標準形）會 404，第二個才中 → 2 筆（format=gemini 讓它排第一）
+    assert_eq!(rep.requests, 2, "應是標準形 404 → 協議前綴形 200：{rep:?}");
+}
+
 /// ★ 真機：**重新生成目錄並確認 Anthropic-only 的模型在裡面**。
 ///
 /// 2026-10-11 的實例：`claude-haiku-5-5` 因為「Codex 到不了 Anthropic-only

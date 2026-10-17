@@ -132,6 +132,71 @@ fn protocol_probe_detects_gemini() {
     assert!(rep.summary.contains("Gemini"), "{}", rep.summary);
 }
 
+/// ★ 迴歸（2026-10-11 真機誤判）：Gemini 的**路徑前綴各家不同**，探測不能只試
+/// 一種形狀。
+///
+/// 實例：opencode-go 的文件端點是
+/// `/inference/go/google/v1beta/models/{m}:generateContent` —— 那個
+/// `/google/v1beta` 不是「base + 字尾」拼得出來的。寫死標準形會讓可用的 Gemini
+/// 模型被誤報成「四種協議都不通」（`gemini-4-argon-contributor` 就是這樣）。
+#[test]
+fn gemini_probe_falls_through_to_the_protocol_prefixed_path() {
+    let port = fake_by_path(|path, body| {
+        // 只認 `/google/v1beta/...`（模擬 opencode-go 的真實形狀）
+        if path.contains("/google/v1beta/models/") && path.contains(":generateContent") {
+            assert!(body.get("contents").is_some(), "{body}");
+            (200, r#"{"candidates":[]}"#.into())
+        } else {
+            (404, "<html>not found</html>".into())
+        }
+    });
+    let mut c = cfg(port, "auto");
+    c.actual_model = "gemini-4-argon-contributor".into();
+    let rep = probe_protocol_http(&c);
+    assert_eq!(rep.protocol.as_deref(), Some("gemini"), "{rep:?}");
+    // chat/responses/anthropic 各 1 筆，gemini 試了 2 個形狀（標準形 404 → 前綴形 200）
+    assert_eq!(rep.requests, 5, "{rep:?}");
+    assert!(rep.summary.contains("Gemini"), "{}", rep.summary);
+}
+
+/// 標準形就通時**不該**多打其他形狀（省請求）。
+#[test]
+fn gemini_probe_stops_at_the_first_working_shape() {
+    let port = fake_by_path(|path, _| {
+        if path.ends_with(":generateContent") {
+            (200, r#"{"candidates":[]}"#.into())
+        } else {
+            (404, "not found".into())
+        }
+    });
+    let mut c = cfg(port, "gemini");
+    c.actual_model = "gemini-x".into();
+    let rep = probe_protocol_http(&c);
+    assert_eq!(rep.protocol.as_deref(), Some("gemini"), "{rep:?}");
+    assert_eq!(rep.requests, 1, "宣告 gemini → 第一筆就中，不該再試其他形狀");
+}
+
+/// 路由存在但模型不收（400）→ **就是這個協議的結論**，不必再試其他形狀
+/// （但還是會繼續試其餘三種協議 —— 模型也可能在 chat 上架）。
+#[test]
+fn gemini_probe_stops_on_a_non_404_rejection() {
+    let port = fake_by_path(|path, _| {
+        if path.contains(":generateContent") {
+            (400, r#"{"error":{"message":"Model does not support"}}"#.into())
+        } else {
+            (404, "not found".into())
+        }
+    });
+    let rep = probe_protocol_http(&cfg(port, "gemini"));
+    assert_eq!(rep.protocol, None, "{rep:?}");
+    // gemini 排第一（來源宣告）→ 400 就定案，**只試了 1 個路徑形狀**
+    assert_eq!(rep.attempts[0].protocol, "gemini", "{rep:?}");
+    assert_eq!(rep.attempts[0].status, 400, "{rep:?}");
+    // 總請求數 = 4（gemini 1 筆 ＋ 其餘三種各 1 筆）；
+    // 若 gemini 把 3 個形狀都試了就會是 6 —— 那才是要防的浪費。
+    assert_eq!(rep.requests, 4, "{rep:?}");
+}
+
 /// `models/` 前綴不想被重複：使用者填 `models/gemini-x` 也要能通。
 #[test]
 fn probe_strips_redundant_models_prefix_for_gemini() {
