@@ -187,12 +187,14 @@ export function ModelPanel(props: { provider: Provider; rowsClassName?: string; 
       </div>
       <div className="mb-3 flex items-center gap-2">
         <button
-          className="btn-ghost px-3 py-1 text-[11px] disabled:opacity-40"
+          // `h-6` ＋ `whitespace-nowrap`：標籤在「偵測中…」與平常之間切換時，
+          // **高度永遠是一行**，不會因為字數變化被擠成兩行。
+          className="btn-ghost inline-flex h-6 shrink-0 items-center px-3 text-[11px] leading-none whitespace-nowrap disabled:opacity-40"
           disabled={probeAll.isPending || (rows.data || []).length === 0}
           title="依序實測本來源每個模型支援哪些思考強度，並帶入設定（會對上游發真正的請求）"
           onClick={() => probeAll.mutate()}
         >
-          {probeAll.isPending ? "偵測中…" : "偵測全部模型的思考強度"}
+          {probeAll.isPending ? "偵測中…" : "偵測思考強度"}
         </button>
         <span className="text-[11px] text-fg/30">
           逐一實測，約 9 筆請求／模型；只改動思考等級，不動其他設定
@@ -200,11 +202,24 @@ export function ModelPanel(props: { provider: Provider; rowsClassName?: string; 
       </div>
       {probeAll.isPending && (
         <div className="mb-3">
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-fg/10">
+          {/*
+            與用量頁的訂閱圓環同一套語言（見 `usage/usageQuota.tsx` 的 QuotaRing）：
+            同一條軌道色 `rgba(255,255,255,0.08)`、同一個 `--mac-accent`、
+            同樣的 0.6s `--mac-ease` 過渡與 accent 光暈 —— 圓環換成橫條而已。
+          */}
+          <div
+            className="relative h-[3px] w-full overflow-hidden rounded-full"
+            style={{ background: "rgba(255,255,255,0.08)" }}
+            title="偵測進度"
+          >
             <div
-              className="h-full rounded-full bg-(--mac-accent) transition-[width] duration-300"
+              className="absolute inset-y-0 left-0 rounded-full"
               style={{
-                width: `${total > 0 ? Math.round((probeDone / total) * 100) : 0}%`,
+                width: `${total > 0 ? (probeDone / total) * 100 : 0}%`,
+                background: "var(--mac-accent)",
+                transition: "width 0.6s var(--mac-ease)",
+                filter:
+                  "drop-shadow(0 0 4px color-mix(in srgb, var(--mac-accent) 40%, transparent))",
               }}
             />
           </div>
