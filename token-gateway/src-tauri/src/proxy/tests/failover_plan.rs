@@ -116,30 +116,36 @@ fn auto_prefers_the_clients_own_protocol() {
     );
 }
 
-/// `auto` + Codex（Responses 入站）：先直通 responses，再翻 chat，最後
-/// 才是 anthropic（2026-10-10 反向翻譯器實作後才排得進來）。
+/// `auto` + Codex（Responses 入站）：直通 → 單跳 → 兩跳，貴的排後面。
+///
+/// `anthropic` 於 2026-10-10、`gemini` 於 2026-10-11 補上反向翻譯器後才排得進來。
 #[test]
-fn auto_for_codex_prefers_responses_then_chat_then_anthropic() {
+fn auto_for_codex_orders_passthrough_then_single_hop_then_two_hops() {
     let a = plan_attempts(7, "auto", None, InFmt::Responses, None, &[]);
     assert_eq!(
         ids(&a),
         vec![
             (7, "openai-responses".into()),
             (7, "openai-chat".into()),
-            (7, "anthropic".into())
+            (7, "anthropic".into()),
+            (7, "gemini".into())
         ],
-        "anthropic 排最後：它是兩跳，比直通與單跳貴"
+        "anthropic／gemini 排最後：它們是兩跳，比直通與單跳貴"
     );
 }
 
-/// `auto` + OpenAI chat 入站：先 chat，再 anthropic
+/// `auto` + OpenAI chat 入站：先 chat，再兩個兩跳的
 /// （chat→responses 是矩陣明定的錯誤，不排）。
 #[test]
-fn auto_for_openai_client_schedules_chat_then_anthropic() {
+fn auto_for_openai_client_orders_chat_then_two_hops() {
     let a = plan_attempts(7, "auto", None, InFmt::OpenAi, None, &[]);
     assert_eq!(
         ids(&a),
-        vec![(7, "openai-chat".into()), (7, "anthropic".into())],
+        vec![
+            (7, "openai-chat".into()),
+            (7, "anthropic".into()),
+            (7, "gemini".into())
+        ],
         "{:?}",
         ids(&a)
     );

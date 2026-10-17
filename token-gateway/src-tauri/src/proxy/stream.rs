@@ -258,6 +258,79 @@ pub(super) fn anthropic_line_to_responses(
     (out, state.astate.done)
 }
 
+/// Gemini 上游 → **Chat 客戶端**：Gemini chunk → 合成 Chat chunk → SSE。
+///
+/// Gemini 的 SSE `data:` 就是一個完整的 `GenerateContentResponse`（沒有 `type`
+/// 可分派），而且**沒有 `[DONE]` 結尾** —— 收尾靠 `on_finish` 補。
+pub(super) fn gemini_line_to_chat(
+    t: &str,
+    state: &mut ChatFromGeminiRelay,
+) -> (Vec<String>, bool) {
+    let Some(d) = t.strip_prefix("data:") else {
+        return (vec![], false);
+    };
+    let d = d.trim_start();
+    if d.is_empty() || d == "[DONE]" {
+        return (vec![], false);
+    }
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(d) else {
+        return (vec![], false);
+    };
+    if v.get("error").is_some() {
+        let e = crate::translate::gemini_error_to_chat(&v);
+        return (vec![format!("data: {e}\n\n")], true);
+    }
+    let chunks = crate::translate::gemini_chunk_to_chat_chunks(&mut state.astate, &v);
+    let mut out = vec![];
+    for c in &chunks {
+        if c.get("usage").is_some() {
+            crate::translate::read_openai_usage(&c["usage"], &mut state.acc);
+        }
+        out.push(format!("data: {c}\n\n"));
+    }
+    (out, state.astate.done)
+}
+
+/// Gemini 上游 → **Responses 客戶端（Codex）**：Gemini chunk → 合成 Chat chunk
+/// → 餵給既有的 `chat_chunk_to_responses`。兩跳的第二段。
+pub(super) fn gemini_line_to_responses(
+    t: &str,
+    state: &mut ResponsesFromGeminiRelay,
+    echo: &str,
+    customs: &[String],
+) -> (Vec<String>, bool) {
+    let Some(d) = t.strip_prefix("data:") else {
+        return (vec![], false);
+    };
+    let d = d.trim_start();
+    if d.is_empty() || d == "[DONE]" {
+        return (vec![], false);
+    }
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(d) else {
+        return (vec![], false);
+    };
+    if v.get("error").is_some() {
+        let e = crate::translate::gemini_error_to_chat(&v);
+        return (
+            crate::translate::responses_stream_fail(&mut state.tstate, echo, &e),
+            true,
+        );
+    }
+    let chunks = crate::translate::gemini_chunk_to_chat_chunks(&mut state.astate, &v);
+    let mut out = vec![];
+    for c in &chunks {
+        out.extend(crate::translate::chat_chunk_to_responses(
+            &mut state.tstate,
+            c,
+            echo,
+            &mut state.acc,
+            customs,
+        ));
+    }
+    // 收流後由 `on_finish` 補 completed/failed
+    (out, state.astate.done)
+}
+
 /// Responses 翻譯分支的逐行轉譯狀態。
 #[derive(Default)]
 pub(super) struct ResponsesRelay {
@@ -280,6 +353,19 @@ pub(super) struct ChatToAnthropicRelay {
 #[derive(Default)]
 pub(super) struct ResponsesFromAnthropicRelay {
     pub(super) astate: crate::translate::AnthropicToChatState,
+    pub(super) tstate: crate::translate::ResponsesStreamState,
+    pub(super) acc: SseUsage,
+}
+/// Gemini **上游** → Chat 客戶端（2026-10-11）。
+#[derive(Default)]
+pub(super) struct ChatFromGeminiRelay {
+    pub(super) astate: crate::translate::GeminiToChatState,
+    pub(super) acc: SseUsage,
+}
+/// Gemini **上游** → Responses 客戶端（Codex）。兩跳的第二段。
+#[derive(Default)]
+pub(super) struct ResponsesFromGeminiRelay {
+    pub(super) astate: crate::translate::GeminiToChatState,
     pub(super) tstate: crate::translate::ResponsesStreamState,
     pub(super) acc: SseUsage,
 }

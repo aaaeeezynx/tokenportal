@@ -24,3 +24,6 @@
     // Codex（Responses）→ Anthropic 上游（2026-10-10 的反向翻譯）
     #[path = "e2e_translate/responses_to_anthropic.rs"]
     mod responses_to_anthropic;
+    // Codex（Responses）→ Gemini 上游（2026-10-11 的反向翻譯）
+    #[path = "e2e_translate/responses_to_gemini.rs"]
+    mod responses_to_gemini;

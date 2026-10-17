@@ -263,8 +263,13 @@ pub(super) fn is_missing_endpoint(status: StatusCode) -> bool {
 /// 上游擋下：`[invalid_request_error] stream_options: Extra inputs are not permitted`。
 pub(super) fn should_inject_usage(kind: TransKind, incoming_path: &str) -> bool {
     match kind {
+        // 翻成 OpenAI chat 形狀 → 要
         TransKind::ResponsesToChat | TransKind::AnthropicToChat => true,
-        TransKind::ChatToAnthropic | TransKind::ResponsesToAnthropic => false,
+        // 翻成 Anthropic／Gemini → 不要（那兩種端點收到會 400）
+        TransKind::ChatToAnthropic
+        | TransKind::ResponsesToAnthropic
+        | TransKind::ChatToGemini
+        | TransKind::ResponsesToGemini => false,
         // 直通：看客戶端打的是哪個端點
         TransKind::None => incoming_path.contains("/chat/completions"),
     }

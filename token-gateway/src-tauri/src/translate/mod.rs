@@ -72,9 +72,34 @@ const MISSING_TOOL_OUTPUT: &str =
 ///（帶 tool_calls 的 content:null 與純空文本均為 OpenAI 合法形狀）。
 const EMPTY_MESSAGE_PLACEHOLDER: &str = "[empty message — placeholder filled by gateway]";
 
+/// 思考強度 → 上游的「延伸思考」預算（**兩個上游共用同一份映射**）。
+///
+/// - Anthropic：`thinking.budget_tokens`
+/// - Gemini：`generationConfig.thinkingConfig.thinkingBudget`
+///
+/// 刻意**同構且單調**（檔位越高、預算越大）：使用者在兩個上游之間切換時，
+/// 「high」的相對強度才是一致的。`minimal` 取 1024（Anthropic 的下限）。
+/// 回傳 `None` = 不啟用延伸思考（`unset` 或上游不認的檔位）。
+///
+/// 放在共用層而不是各自的翻譯器裡，是因為兩邊**必須**一致 ——
+/// 分成兩份遲早會漂移（而且會造成同名匯出衝突）。
+pub(crate) fn thinking_budget(effort: &str) -> Option<i64> {
+    match effort.trim().to_ascii_lowercase().as_str() {
+        "minimal" => Some(1_024),
+        "low" => Some(2_048),
+        "medium" => Some(8_192),
+        "high" => Some(16_384),
+        "xhigh" => Some(32_768),
+        "max" | "ultra" | "persistent" => Some(65_536),
+        _ => None,
+    }
+}
+
 mod anthropic;
 mod anthropic_req;
 mod anthropic_resp;
+mod gemini_req;
+mod gemini_resp;
 mod openai_chat;
 mod responses;
 mod responses_finish;
@@ -85,6 +110,8 @@ mod sanitize;
 pub(crate) use anthropic::*;
 pub(crate) use anthropic_req::*;
 pub(crate) use anthropic_resp::*;
+pub(crate) use gemini_req::*;
+pub(crate) use gemini_resp::*;
 pub(crate) use openai_chat::*;
 pub(crate) use responses::*;
 pub(crate) use responses_finish::*;

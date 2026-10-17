@@ -29,8 +29,15 @@ pub(super) fn build_upstream_target(
     translated: bool,
     app: &str,
     target_fmt: TargetFmt,
+    // 翻譯器指定的上游路徑（含查詢字串）。`None` = 用下面的預設。
+    //
+    // Gemini 專用：它的模型名在路徑裡（`/models/{m}:generateContent`），
+    // 而路徑長相取決於翻譯結果（串流與否），所以由翻譯器決定。
+    path_override: Option<&str>,
 ) -> (String, Vec<(String, String)>) {
-    let mut url = if translated {
+    let mut url = if let Some(p) = path_override {
+        format!("{}{}", authed.provider_base_url.trim_end_matches('/'), p)
+    } else if translated {
         // 翻譯路徑的端點由**目標協議**決定，不能寫死 /chat/completions ——
         // Anthropic 上游（例如 opencode-go 的 /messages）是另一個路徑。
         let base = authed.provider_base_url.trim_end_matches('/');
@@ -42,9 +49,12 @@ pub(super) fn build_upstream_target(
     } else {
         join_upstream(&authed.provider_base_url, parts.uri.path())
     };
-    if let Some(q) = strip_key_param(parts.uri.query()) {
-        url.push('?');
-        url.push_str(&q);
+    // 覆寫路徑自己就帶查詢字串（`?alt=sse`），不能再接客戶端的 query
+    if path_override.is_none() {
+        if let Some(q) = strip_key_param(parts.uri.query()) {
+            url.push('?');
+            url.push_str(&q);
+        }
     }
 
     let mut fwd: Vec<(String, String)> = Vec::new();
@@ -73,6 +83,10 @@ pub(super) fn build_upstream_target(
     if matches!(target_fmt, TargetFmt::Anthropic) && !pkey.is_empty() {
         fwd.push(("x-api-key".to_string(), pkey.to_string()));
         fwd.push(("anthropic-version".to_string(), "2023-06-01".to_string()));
+    }
+    // Gemini 目標同理：`generateContent` 只認 `x-goog-api-key`。
+    if matches!(target_fmt, TargetFmt::Gemini) && !pkey.is_empty() {
+        fwd.push(("x-goog-api-key".to_string(), pkey.to_string()));
     }
     match authed.provider_auth_scheme.as_str() {
         "goog-key" => {
@@ -203,6 +217,13 @@ pub(super) struct ForwardBody {
     pub(super) bytes: Vec<u8>,
     /// 送往上游的實際模型名（翻譯或直通改寫時）；未改寫則為空字串。
     pub(super) model: String,
+    /// 覆寫上游路徑（含查詢字串）。`None` = 用 [`build_upstream_target`] 的預設。
+    ///
+    /// 存在的理由：**Gemini 把模型名放在路徑裡**
+    ///（`/models/{model}:generateContent` 或 `:streamGenerateContent?alt=sse`），
+    /// 而路徑長相取決於翻譯結果（串流與否）。把它交給翻譯器決定，
+    /// 而不是讓 `build_upstream_target` 去猜。
+    pub(super) path_suffix: Option<String>,
 }
 /// `translate_forward_body` 的結果。
 pub(super) enum BodyPrep {
@@ -231,6 +252,8 @@ pub(super) fn translate_forward_body(
     let mut fwd_value = body_json.clone();
     let mut translated_model = String::new();
     let mut rewritten = false;
+    // 翻譯器若需要覆寫上游路徑（Gemini 把模型名放在路徑裡）就填這裡
+    let mut translated_path: Option<String> = None;
 
     if fmt.translated {
         let Some(v) = fwd_value.as_ref().cloned() else {
@@ -252,6 +275,18 @@ pub(super) fn translate_forward_body(
             }
             TransKind::ChatToAnthropic => {
                 crate::translate::chat_to_anthropic(&v, &actual, &allowed)
+            }
+            // Gemini 同理：Responses 走兩跳，Chat 直接跳
+            TransKind::ResponsesToGemini => {
+                let chat = crate::translate::responses_to_openai(&v, &actual, &allowed);
+                let (body, path) = crate::translate::chat_to_gemini(&chat, &actual, &allowed);
+                translated_path = Some(path);
+                body
+            }
+            TransKind::ChatToGemini => {
+                let (body, path) = crate::translate::chat_to_gemini(&v, &actual, &allowed);
+                translated_path = Some(path);
+                body
             }
             _ => crate::translate::anthropic_to_openai(&v, &actual),
         });
@@ -299,6 +334,7 @@ pub(super) fn translate_forward_body(
     BodyPrep::Ready(ForwardBody {
         bytes,
         model: translated_model,
+        path_suffix: translated_path,
     })
 }
 /// 依序套用所有「上游已知拒收」的剝離：

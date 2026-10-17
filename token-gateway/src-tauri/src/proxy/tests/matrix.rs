@@ -36,6 +36,9 @@
         // 2026-10-10 補的反向（OpenAI → Anthropic）
         const C2A: Option<TransKind> = Some(TransKind::ChatToAnthropic);
         const R2A: Option<TransKind> = Some(TransKind::ResponsesToAnthropic);
+    // 2026-10-11 補的 Gemini 反向
+    const C2G: Option<TransKind> = Some(TransKind::ChatToGemini);
+    const R2G: Option<TransKind> = Some(TransKind::ResponsesToGemini);
         // 5 種入站 × 6 種渠道協議 = 30 格，全部明列。
         // 這份表就是行為契約：任何分支被重排或漏改，這裡立刻失敗。
         let table: &[(InFmt, T, Option<TransKind>)] = &[
@@ -52,14 +55,14 @@
             // mixed：兩邊都通 —— Responses 原樣直通（打上游 /responses），不翻成 chat。
             (Responses, T::Mixed, NONE),
             (Responses, T::Anthropic, R2A),
-            (Responses, T::Gemini, None),
+            (Responses, T::Gemini, R2G),
             (Responses, T::Unknown, NONE),
             // OpenAI Chat 入站
             (OpenAi, T::OpenAiChat, NONE),
             (OpenAi, T::OpenAiResponses, None), // B6：原為靜默直通
             (OpenAi, T::Mixed, NONE),
             (OpenAi, T::Anthropic, C2A),
-            (OpenAi, T::Gemini, None),
+            (OpenAi, T::Gemini, C2G),
             (OpenAi, T::Unknown, NONE),
             // Gemini 原生入站
             (Gemini, T::OpenAiChat, None),
@@ -123,9 +126,10 @@
             resolve_trans_kind(InFmt::Gemini, TargetFmt::OpenAiChat).unwrap_err(),
             E_GEMINI_IN_ONLY
         );
+        // 2026-10-11：Gemini 的反向翻譯器已實作，這一格不再是 Err
         assert_eq!(
-            resolve_trans_kind(InFmt::OpenAi, TargetFmt::Gemini).unwrap_err(),
-            E_GEMINI_OUT_ONLY
+            resolve_trans_kind(InFmt::OpenAi, TargetFmt::Gemini).unwrap(),
+            TransKind::ChatToGemini
         );
     }
 

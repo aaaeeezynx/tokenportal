@@ -233,6 +233,8 @@ pub(super) struct Prepared {
     pub(super) bytes: Vec<u8>,
     /// 送往上游的實際模型名（未改寫則空字串）。
     pub(super) model: String,
+    /// 翻譯器指定的上游路徑（Gemini 把模型名放在路徑裡）；`None` = 用預設。
+    pub(super) path_suffix: Option<String>,
 }
 /// 格式矩陣判定 → 請求體轉譯 → 剝離上游拒收結構。
 ///
@@ -280,7 +282,7 @@ pub(super) fn prepare_request(input: PrepareInput<'_>) -> Result<Prepared, Box<R
     // Responses / Anthropic / Gemini 端點加這個欄位會被上游 400。
     // 判斷看 `kind`（翻到哪種協議），不能只看「有沒有翻譯」——見 util.rs 的註解。
     let want_usage_opt = should_inject_usage(kind, input.path_hint);
-    let (bytes, model) = match translate_forward_body(
+    let (bytes, model, path_suffix) = match translate_forward_body(
         input.conn,
         input.provider_id,
         input.raw,
@@ -289,7 +291,7 @@ pub(super) fn prepare_request(input: PrepareInput<'_>) -> Result<Prepared, Box<R
         TransSpec { kind, translated },
         want_usage_opt,
     ) {
-        BodyPrep::Ready(fb) => (fb.bytes, fb.model),
+        BodyPrep::Ready(fb) => (fb.bytes, fb.model, fb.path_suffix),
         BodyPrep::Unparsable => {
             // ── §5.2 的關鍵修復 ──
             // 本專案的「body 解析失敗 400」一直無法判定根因：docs/evidence/
@@ -335,6 +337,7 @@ pub(super) fn prepare_request(input: PrepareInput<'_>) -> Result<Prepared, Box<R
         translated,
         bytes,
         model,
+        path_suffix,
     })
 }
 /// 一次請求的四個元資料，後續每個階段都要用。
@@ -386,8 +389,10 @@ pub(super) fn upstream_for<'a>(
     translated: bool,
     app: &str,
     target_fmt: TargetFmt,
+    path_override: Option<&str>,
 ) -> Upstream<'a> {
-    let (url, headers) = build_upstream_target(parts, authed, translated, app, target_fmt);
+    let (url, headers) =
+        build_upstream_target(parts, authed, translated, app, target_fmt, path_override);
     Upstream {
         client: &ctx.client,
         method: parts.method.clone(),

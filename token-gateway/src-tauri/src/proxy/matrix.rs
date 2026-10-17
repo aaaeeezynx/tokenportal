@@ -18,6 +18,11 @@ pub(super) enum TransKind {
     /// Responses（Codex）請求 → Anthropic 上游。請求側是兩跳組合：
     /// `responses_to_openai` 再接 `chat_to_anthropic`。
     ResponsesToAnthropic,
+    /// OpenAI Chat 請求 → Gemini 上游（2026-10-11）。
+    ChatToGemini,
+    /// Responses（Codex）請求 → Gemini 上游。同樣是兩跳：
+    /// `responses_to_openai` 再接 `chat_to_gemini`。
+    ResponsesToGemini,
 }
 
 impl TransKind {
@@ -28,6 +33,8 @@ impl TransKind {
             TransKind::ResponsesToChat => "responses_to_chat",
             TransKind::ChatToAnthropic => "chat_to_anthropic",
             TransKind::ResponsesToAnthropic => "responses_to_anthropic",
+            TransKind::ChatToGemini => "chat_to_gemini",
+            TransKind::ResponsesToGemini => "responses_to_gemini",
         }
     }
 }
@@ -188,7 +195,8 @@ pub(super) fn resolve_trans_kind(in_fmt: InFmt, target: TargetFmt) -> Result<Tra
         // 2026-10-10：反向翻譯器已實作（見 translate/anthropic_req.rs）。
         // 請求側是兩跳：responses_to_openai → chat_to_anthropic。
         (Responses, T::Anthropic) => Ok(TransKind::ResponsesToAnthropic),
-        (Responses, T::Gemini) => Err(E_GEMINI_OUT_ONLY),
+        // 2026-10-11：Gemini 的反向翻譯器已實作（見 translate/gemini_req.rs）
+        (Responses, T::Gemini) => Ok(TransKind::ResponsesToGemini),
         (Responses, T::Auto) => Err(E_AUTO_UNRESOLVED),
         (Responses, T::Unknown) => Ok(TransKind::None),
 
@@ -196,7 +204,7 @@ pub(super) fn resolve_trans_kind(in_fmt: InFmt, target: TargetFmt) -> Result<Tra
         (OpenAi, T::OpenAiChat) | (OpenAi, T::Mixed) => Ok(TransKind::None),
         (OpenAi, T::OpenAiResponses) => Err(E_CHAT_TO_RESPONSES),
         (OpenAi, T::Anthropic) => Ok(TransKind::ChatToAnthropic),
-        (OpenAi, T::Gemini) => Err(E_GEMINI_OUT_ONLY),
+        (OpenAi, T::Gemini) => Ok(TransKind::ChatToGemini),
         (OpenAi, T::Auto) => Err(E_AUTO_UNRESOLVED),
         (OpenAi, T::Unknown) => Ok(TransKind::None),
 

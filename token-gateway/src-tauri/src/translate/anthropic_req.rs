@@ -25,24 +25,6 @@ const DEFAULT_MAX_TOKENS: i64 = 8_192;
 /// `budget_tokens` 必須**嚴格小於** `max_tokens`；留這麼多給正文。
 const MAX_TOKENS_HEADROOM: i64 = 1_024;
 
-/// 思考強度 → Anthropic 延伸思考的 `budget_tokens`。
-///
-/// 使用者要求「程式中的思考強度直接映射過來」，所以這是一份**單調**的對應
-/// ——檔位越高、預算越大，直覺才成立。`minimal` 取 Anthropic 的下限 1024。
-///
-/// 回傳 `None` = 不啟用延伸思考（`unset` 或上游不認的檔位）。
-pub(crate) fn thinking_budget(effort: &str) -> Option<i64> {
-    match effort.trim().to_ascii_lowercase().as_str() {
-        "minimal" => Some(1_024),
-        "low" => Some(2_048),
-        "medium" => Some(8_192),
-        "high" => Some(16_384),
-        "xhigh" => Some(32_768),
-        "max" | "ultra" | "persistent" => Some(65_536),
-        _ => None,
-    }
-}
-
 /// OpenAI content（字串或 parts 陣列）→ Anthropic content blocks。
 ///
 /// 空白的 text 區塊會被丟掉：Anthropic 對 `{"type":"text","text":""}` 會 400。

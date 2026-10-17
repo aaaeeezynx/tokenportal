@@ -79,8 +79,10 @@ use {
     retry::{send_with_strip_retry, RetryCtx, SendOutcome, Upstream},
     reqctx::ReqCtx,
     stream::{
-        anthropic_line_to_chat, anthropic_line_to_responses, relay_sse, responses_line_events,
-        sse_response, AnthropicRelay, ChatToAnthropicRelay, ResponsesFromAnthropicRelay,
+        anthropic_line_to_chat, anthropic_line_to_responses, gemini_line_to_chat,
+        gemini_line_to_responses, relay_sse, responses_line_events,
+        sse_response, AnthropicRelay, ChatFromGeminiRelay, ChatToAnthropicRelay,
+        ResponsesFromAnthropicRelay, ResponsesFromGeminiRelay,
         ResponsesRelay, StreamLog,
     },
     strip::{
@@ -287,7 +289,15 @@ async fn proxy_handler(State(ctx): State<ProxyCtx>, req: axum::http::Request<Bod
         };
         let translated = prep.translated;
         // ---- 組裝上游請求（翻譯時固定打 /chat/completions）
-        let up = upstream_for(&ctx, &parts, &authed, translated, &app, prep.target_fmt);
+        let up = upstream_for(
+            &ctx,
+            &parts,
+            &authed,
+            translated,
+            &app,
+            prep.target_fmt,
+            prep.path_suffix.as_deref(),
+        );
         let outcome = send_with_strip_retry(
             &RetryCtx {
                 req: rc,
