@@ -261,3 +261,59 @@ fn tool_parameters_are_sanitized_for_gemini() {
     assert_eq!(p["required"][0], "command");
     assert_eq!(p["properties"]["command"]["description"], "cmd");
 }
+
+/// ★ 迴歸（2026-10-12 真機）：工具結果的 `functionResponse.name` **不能是空的**。
+///
+/// Codex 第二輪（模型呼叫工具之後）就撞到：
+///
+///     GenerateContentRequest.contents[2].parts[0].function_response.name:
+///     Name cannot be empty.
+///
+/// 因為 Chat 的 tool 訊息只帶 `tool_call_id`，而 Gemini 要的是**函式名** ——
+/// 必須回頭從前面 assistant 的 `tool_calls` 反查。
+#[test]
+fn function_response_name_is_resolved_from_tool_call_id() {
+    let req = json!({
+        "model": "m",
+        "messages": [
+            {"role": "user", "content": "run ls"},
+            {"role": "assistant", "content": null, "tool_calls": [
+                {"id": "c1", "type": "function",
+                 "function": {"name": "shell", "arguments": "{}"}}]},
+            // 沒有 name，只有 tool_call_id（Chat 的常態）
+            {"role": "tool", "tool_call_id": "c1", "content": "file.txt"}
+        ]
+    });
+    let (out, _) = chat_to_gemini(&req, "g", &[]);
+    let fr = &out["contents"][2]["parts"][0]["functionResponse"];
+    assert_eq!(fr["name"], "shell", "應由 tool_call_id 反查到函式名：{fr}");
+    assert_eq!(fr["response"]["content"], "file.txt");
+}
+
+/// 訊息自帶 `name` 時優先用它。
+#[test]
+fn function_response_prefers_an_explicit_name() {
+    let req = json!({
+        "model": "m",
+        "messages": [
+            {"role": "tool", "name": "explicit_name", "tool_call_id": "c9", "content": "x"}
+        ]
+    });
+    let (out, _) = chat_to_gemini(&req, "g", &[]);
+    assert_eq!(
+        out["contents"][0]["parts"][0]["functionResponse"]["name"],
+        "explicit_name"
+    );
+}
+
+/// 真的反查不到時給佔位符 —— **絕不留空**（空名一定 400）。
+#[test]
+fn function_response_never_leaves_the_name_empty() {
+    let req = json!({
+        "model": "m",
+        "messages": [{"role": "tool", "tool_call_id": "unknown-id", "content": "x"}]
+    });
+    let (out, _) = chat_to_gemini(&req, "g", &[]);
+    let name = &out["contents"][0]["parts"][0]["functionResponse"]["name"];
+    assert!(!name.as_str().unwrap_or("").is_empty(), "不可為空：{out}");
+}

@@ -61,103 +61,6 @@ fn content_to_parts(content: &Value) -> Vec<Value> {
 }
 
 /// Chat `tool_choice` → Gemini `functionCallingConfig.mode`。
-/// Gemini 的 `functionDeclarations.parameters` 只吃 **OpenAPI 子集**，
-/// 而且它是**嚴格解析**：遇到不認得的關鍵字就整顆請求 400，不是忽略。
-///
-/// 2026-10-12 真機上的實例（Codex → Gemini）：
-///
-/// ```text
-/// [400] Invalid JSON payload received. Unknown name "additionalProperties"
-///       at 'tools[0].functionDeclarations[0].parameters'
-/// ```
-///
-/// Codex／OpenAI 送的是完整 JSON Schema（`additionalProperties`、`$schema`、
-/// `exclusiveMinimum`、`type: ["string","null"]` …），原樣透傳必爆。
-///
-/// 所以這裡是**白名單**而不是黑名單 —— 黑名單永遠追不上對方送來的關鍵字，
-/// 而 Gemini 對未知字是硬錯誤。
-fn sanitize_gemini_schema(v: &Value) -> Value {
-    /// Gemini Schema 認得的鍵（其餘一律丟掉）。
-    const KEEP: [&str; 20] = [
-        "type",
-        "format",
-        "title",
-        "description",
-        "nullable",
-        "enum",
-        "items",
-        "properties",
-        "required",
-        "anyOf",
-        "minimum",
-        "maximum",
-        "minItems",
-        "maxItems",
-        "minLength",
-        "maxLength",
-        "pattern",
-        "default",
-        "example",
-        "propertyOrdering",
-    ];
-    match v {
-        Value::Object(o) => {
-            let mut out = serde_json::Map::new();
-            for (k, val) in o {
-                // `properties` 的**鍵是使用者自訂的屬性名**，不能套白名單
-                //（否則一個叫 `type` 的參數會被吃掉），只清洗它的值。
-                if k == "properties" {
-                    if let Some(map) = val.as_object() {
-                        let mut props = serde_json::Map::new();
-                        for (name, schema) in map {
-                            props.insert(name.clone(), sanitize_gemini_schema(schema));
-                        }
-                        out.insert("properties".to_string(), Value::Object(props));
-                    }
-                    continue;
-                }
-                // `const` → `enum: [x]`（Gemini 沒有 const）
-                if k == "const" {
-                    out.insert("enum".to_string(), json!([val]));
-                    continue;
-                }
-                // `oneOf` → `anyOf`（Gemini 只認 anyOf；語意略鬆但可用）
-                if k == "oneOf" {
-                    out.insert("anyOf".to_string(), sanitize_gemini_schema(val));
-                    continue;
-                }
-                // `type: ["string","null"]` → `type: "string"` ＋ `nullable: true`
-                if k == "type" {
-                    if let Some(arr) = val.as_array() {
-                        let mut ty: Option<&str> = None;
-                        let mut nullable = false;
-                        for x in arr {
-                            match x.as_str() {
-                                Some("null") => nullable = true,
-                                Some(t) => ty = Some(t),
-                                None => {}
-                            }
-                        }
-                        if let Some(t) = ty {
-                            out.insert("type".to_string(), json!(t));
-                        }
-                        if nullable {
-                            out.insert("nullable".to_string(), json!(true));
-                        }
-                        continue;
-                    }
-                }
-                if KEEP.contains(&k.as_str()) {
-                    out.insert(k.clone(), sanitize_gemini_schema(val));
-                }
-            }
-            Value::Object(out)
-        }
-        Value::Array(a) => Value::Array(a.iter().map(sanitize_gemini_schema).collect()),
-        _ => v.clone(),
-    }
-}
-
 fn tool_choice_to_gemini(tc: &Value) -> Option<Value> {
     let (mode, names): (&str, Vec<String>) = match tc {
         Value::String(v) => match v.as_str() {
@@ -201,6 +104,30 @@ pub(crate) fn chat_to_gemini(
 ) -> (Value, String) {
     let mut contents: Vec<Value> = vec![];
     let mut system_parts: Vec<String> = vec![];
+
+    // `tool_call_id` → 函式名。
+    //
+    // Gemini 的 `functionResponse.name` 要的是**函式名**，而且**不能是空的**
+    //（空了整顆請求 400：`function_response.name: Name cannot be empty.`）。
+    // 但 Chat 的 tool 訊息只帶 `tool_call_id`，`name` 常常沒有 —— 所以要從
+    // 前面 assistant 的 `tool_calls` 反查。
+    //
+    // 2026-10-12 真機：Codex 第二輪（模型呼叫工具之後）就撞到這個。
+    let mut call_names: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    if let Some(arr) = req.get("messages").and_then(|m| m.as_array()) {
+        for m in arr {
+            if let Some(calls) = m.get("tool_calls").and_then(|t| t.as_array()) {
+                for call in calls {
+                    let id = s(&call["id"]);
+                    let name = s(&call["function"]["name"]);
+                    if !id.is_empty() && !name.is_empty() {
+                        call_names.insert(id, name);
+                    }
+                }
+            }
+        }
+    }
 
     if let Some(arr) = req.get("messages").and_then(|m| m.as_array()) {
         for m in arr {
@@ -252,10 +179,22 @@ pub(crate) fn chat_to_gemini(
                             .join(""),
                         _ => String::new(),
                     };
+                    // 名稱優先序：訊息自帶的 `name` → 由 `tool_call_id` 反查 →
+                    // 佔位符（**絕不留空**，空名一定 400）。
+                    let mut name = s(&m["name"]);
+                    if name.is_empty() {
+                        name = call_names
+                            .get(&s(&m["tool_call_id"]))
+                            .cloned()
+                            .unwrap_or_default();
+                    }
+                    if name.is_empty() {
+                        name = "function".to_string();
+                    }
                     contents.push(json!({
                         "role": "user",
                         "parts": [{"functionResponse": {
-                            "name": s(&m["name"]),
+                            "name": name,
                             "response": {"content": out}
                         }}]
                     }));
@@ -332,8 +271,8 @@ pub(crate) fn chat_to_gemini(
                 }
                 if let Some(p) = f.get("parameters") {
                     // 必須清洗：Gemini 對未知的 schema 關鍵字是**硬錯誤**
-                    //（見 `sanitize_gemini_schema` 的說明）。
-                    d.insert("parameters".to_string(), sanitize_gemini_schema(p));
+                    //（見 `translate/gemini_schema.rs` 的說明）。
+                    d.insert("parameters".to_string(), super::gemini_schema::sanitize(p));
                 }
                 Some(Value::Object(d))
             })

@@ -99,6 +99,7 @@ mod anthropic;
 mod anthropic_req;
 mod anthropic_resp;
 mod gemini_req;
+mod gemini_schema;
 mod gemini_resp;
 mod openai_chat;
 mod responses;
