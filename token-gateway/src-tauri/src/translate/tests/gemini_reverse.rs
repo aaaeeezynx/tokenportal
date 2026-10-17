@@ -209,3 +209,55 @@ fn gemini_error_becomes_chat_error() {
     assert_eq!(out["error"]["type"], "RESOURCE_EXHAUSTED");
     assert_eq!(out["error"]["code"], 429);
 }
+
+/// ★ 迴歸（2026-10-12 真機）：**工具參數的 JSON Schema 必須清洗**。
+///
+/// Gemini 的 `functionDeclarations.parameters` 是嚴格解析的 OpenAPI 子集，
+/// 遇到不認得的關鍵字整顆請求 400。Codex 送的是完整 JSON Schema：
+///
+///     [400] Invalid JSON payload received. Unknown name "additionalProperties"
+///           at 'tools[0].functionDeclarations[0].parameters'
+///
+/// 所以是白名單，不是黑名單。
+#[test]
+fn tool_parameters_are_sanitized_for_gemini() {
+    let req = json!({
+        "model": "m", "messages": [],
+        "tools": [{"type": "function", "function": {
+            "name": "shell", "description": "d",
+            "parameters": {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "additionalProperties": false,
+                "strict": true,
+                "exclusiveMinimum": 0,
+                "properties": {
+                    "command": {"type": ["array", "null"],
+                                "items": {"type": "string"}, "description": "cmd"},
+                    // 屬性名就叫 `type` —— 不能被白名單吃掉
+                    "type": {"type": "string"},
+                    // `const` → enum
+                    "mode": {"const": "fast"}
+                },
+                "required": ["command"]
+            }}}]
+    });
+    let (out, _) = chat_to_gemini(&req, "g", &[]);
+    let p = &out["tools"][0]["functionDeclarations"][0]["parameters"];
+    // 未知關鍵字一律消失
+    assert!(p.get("additionalProperties").is_none(), "{p}");
+    assert!(p.get("$schema").is_none(), "{p}");
+    assert!(p.get("strict").is_none(), "{p}");
+    assert!(p.get("exclusiveMinimum").is_none(), "{p}");
+    // `type: [...,"null"]` → type + nullable
+    assert_eq!(p["properties"]["command"]["type"], "array");
+    assert_eq!(p["properties"]["command"]["nullable"], true);
+    // 屬性名叫 type 的要完整保留
+    assert_eq!(p["properties"]["type"]["type"], "string", "{p}");
+    // const → enum
+    assert_eq!(p["properties"]["mode"]["enum"][0], "fast");
+    // 認得的關鍵字留著
+    assert_eq!(p["type"], "object");
+    assert_eq!(p["required"][0], "command");
+    assert_eq!(p["properties"]["command"]["description"], "cmd");
+}
