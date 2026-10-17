@@ -45,7 +45,7 @@ fn cfg(port: u16, format: &str) -> ProbeCfg {
         key: "k".into(),
         scheme: "bearer".into(),
         actual_model: "claude-haiku-5-5".into(),
-        format: format.into(),
+        protocol: format.into(),
         prefixes: String::new(),
     }
 }

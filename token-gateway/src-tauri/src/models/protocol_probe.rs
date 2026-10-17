@@ -26,7 +26,7 @@ pub(crate) const PROBED_PROTOCOL_KEY: &str = "__probe__";
 /// 「三種都不通」，那是誤導 —— 它其實只是第四種。
 const PROTOCOLS: [&str; 4] = ["chat", "responses", "anthropic", "gemini"];
 
-/// 來源的 `api_format` → 探測用的協議名（把最可能的排到第一個，省請求）。
+/// 已知的協議（模型的 `protocol`）→ 探測用的短名（把最可能的排到第一個，省請求）。
 fn declared_probe_name(format: &str) -> Option<&'static str> {
     match format.trim() {
         "openai-chat" => Some("chat"),
@@ -253,7 +253,7 @@ pub(crate) fn probe_protocol_http(cfg: &ProbeCfg) -> ProtocolProbeReport {
     };
     let mut saw_inconclusive = false;
     // 來源若明確宣告了某種協議，先試它（省請求；`auto`/`mixed` 保持原順序）
-    for p in probe_order(&cfg.format) {
+    for p in probe_order(&cfg.protocol) {
         let (status, detail) = match send_protocol(cfg, p) {
             Ok((s, text, sent)) => {
                 rep.requests += sent;

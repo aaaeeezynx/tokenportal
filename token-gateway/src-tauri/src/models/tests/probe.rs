@@ -51,13 +51,55 @@ where
     (rx.recv().unwrap(), seen)
 }
 
+/// 起一個「把 `(路徑, body)` 都交出來」的假上游。
+///
+/// `fake_upstream` 只認得 `reasoning_effort`；Anthropic／Gemini 的思考強度是
+/// **預算式**（`thinking.budget_tokens` / `thinkingConfig.thinkingBudget`），
+/// 所以要連 body 與路徑一起看。
+#[allow(clippy::type_complexity)]
+fn fake_generic<F>(handler: F) -> (u16, std::sync::Arc<std::sync::Mutex<Vec<(String, serde_json::Value)>>>)
+where
+    F: Fn(String, serde_json::Value) -> (u16, String) + Send + Sync + Clone + 'static,
+{
+    let seen: std::sync::Arc<std::sync::Mutex<Vec<(String, serde_json::Value)>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen_srv = seen.clone();
+    let app = axum::Router::new().fallback(
+        move |uri: axum::http::Uri, axum::Json(body): axum::Json<serde_json::Value>| {
+            let seen = seen_srv.clone();
+            async move {
+                let path = uri.path().to_string();
+                seen.lock().unwrap().push((path.clone(), body.clone()));
+                let (status, text) = handler(path, body);
+                (
+                    axum::http::StatusCode::from_u16(status).unwrap(),
+                    text,
+                )
+            }
+        },
+    );
+    let (tx, rx) = std::sync::mpsc::channel::<u16>();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async move {
+            let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            tx.send(l.local_addr().unwrap().port()).unwrap();
+            axum::serve(l, app).await.unwrap();
+        });
+    });
+    (rx.recv().unwrap(), seen)
+}
+
 fn cfg_for(port: u16) -> ProbeCfg {
     ProbeCfg {
         base: format!("http://127.0.0.1:{port}"),
         key: "k".into(),
         scheme: "bearer".into(),
         actual_model: "mimo-test".into(),
-        format: "openai-chat".into(),
+        protocol: "openai-chat".into(),
         prefixes: String::new(),
     }
 }
@@ -175,6 +217,129 @@ fn live_probe_two_mimo_models() {
         checked += 1;
     }
     assert!(checked > 0, "沒有任何模型被驗證到（來源或金鑰不在？）");
+}
+
+
+// ───────── 協議驅動（2026-10-11）─────────
+
+/// ★ 迴歸：`api_format = auto` **不再擋掉探測**。
+///
+/// 佈局偵測把來源格式設成 `auto` 之後，舊版拿 `api_format` 當閘門，於是
+/// 「偵測全部模型的思考強度」對**每一個模型**都報
+/// 「「auto」渠道的思考強度不是用 reasoning_effort 控制的」。
+#[test]
+fn auto_format_no_longer_blocks_the_probe() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = crate::db::open_and_ensure(&dir.path().join("a.db")).unwrap();
+    let pid = seed_provider(&conn, "auto-src");
+    conn.execute(
+        "UPDATE providers SET api_format='auto', base_url='http://127.0.0.1:1',
+         api_key='k' WHERE id=?1",
+        [pid],
+    )
+    .unwrap();
+    seed_model(&conn, pid, "m", None);
+    let mid: i64 = conn
+        .query_row("SELECT id FROM provider_models WHERE provider_id=?1", [pid], |r| r.get(0))
+        .unwrap();
+    let cfg = probe_read_cfg(&conn, pid, mid).expect("auto 不該被擋掉");
+    // 沒有逐模型協議 → 先當 chat（最常見）
+    assert_eq!(cfg.protocol, "openai-chat");
+}
+
+/// 逐模型協議優先於來源格式（來源是 auto，但這個模型標成 anthropic）。
+#[test]
+fn the_models_protocol_wins_over_the_source_format() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = crate::db::open_and_ensure(&dir.path().join("b.db")).unwrap();
+    let pid = seed_provider(&conn, "s");
+    conn.execute(
+        "UPDATE providers SET api_format='auto', base_url='http://127.0.0.1:1',
+         api_key='k' WHERE id=?1",
+        [pid],
+    )
+    .unwrap();
+    seed_model(&conn, pid, "claude-ish", None);
+    conn.execute(
+        "UPDATE provider_models SET protocol='anthropic' WHERE provider_id=?1",
+        [pid],
+    )
+    .unwrap();
+    let mid: i64 = conn
+        .query_row("SELECT id FROM provider_models WHERE provider_id=?1", [pid], |r| r.get(0))
+        .unwrap();
+    assert_eq!(probe_read_cfg(&conn, pid, mid).unwrap().protocol, "anthropic");
+}
+
+/// Anthropic 協議：打 `/messages`、送 `thinking.budget_tokens`（不是 reasoning_effort）。
+#[test]
+fn anthropic_protocol_probes_the_thinking_budget() {
+    let (port, seen) = fake_generic(|path, body| {
+        if !path.ends_with("/messages") {
+            return (404, "not found".into());
+        }
+        // 只接受 <= 16384 的預算（模擬「高檔位不支援」）
+        if let Some(b) = body["thinking"]["budget_tokens"].as_i64() {
+            if b > 16384 {
+                return (400, r#"{"error":{"message":"budget too large"}}"#.into());
+            }
+        }
+        (200, "{}".into())
+    });
+    let mut c = cfg_for(port);
+    c.protocol = "anthropic".into();
+    let rep = probe_model_http(&c);
+    assert!(rep.baseline_ok, "{rep:?}");
+    assert_eq!(rep.requests, 1 + CANDIDATE_LEVELS.len());
+    // high(16384) 可、xhigh(32768) 不可
+    assert!(rep.supported.contains(&"high".to_string()), "{:?}", rep.supported);
+    assert!(rep.unsupported.contains(&"xhigh".to_string()), "{:?}", rep.unsupported);
+    let s = seen.lock().unwrap().clone();
+    // 第一筆是基準：**沒有** thinking 欄位，而且打的是 /messages
+    assert!(s[0].0.ends_with("/messages"), "{:?}", s[0].0);
+    assert!(s[0].1.get("thinking").is_none(), "基準不該帶 thinking：{:?}", s[0].1);
+    // 候選用 budget_tokens，不是 reasoning_effort
+    assert!(
+        s.iter().any(|(_, b)| b["thinking"]["budget_tokens"].as_i64() == Some(16384)),
+        "應送 thinking.budget_tokens=16384"
+    );
+    assert!(
+        s.iter().all(|(_, b)| b.get("reasoning_effort").is_none()),
+        "Anthropic 不該送 reasoning_effort"
+    );
+}
+
+/// Gemini 協議：打 `:generateContent`、送 `thinkingConfig.thinkingBudget`。
+#[test]
+fn gemini_protocol_probes_thinking_config() {
+    let (port, seen) = fake_generic(|path, body| {
+        if !path.contains(":generateContent") {
+            return (404, "not found".into());
+        }
+        if let Some(b) = body["generationConfig"]["thinkingConfig"]["thinkingBudget"].as_i64() {
+            if b > 8192 {
+                return (400, r#"{"error":{"message":"thinkingBudget out of range"}}"#.into());
+            }
+        }
+        (200, "{}".into())
+    });
+    let mut c = cfg_for(port);
+    c.protocol = "gemini".into();
+    let rep = probe_model_http(&c);
+    assert!(rep.baseline_ok, "{rep:?}");
+    assert!(rep.supported.contains(&"medium".to_string()), "{:?}", rep.supported);
+    assert!(rep.unsupported.contains(&"high".to_string()), "{:?}", rep.unsupported);
+    let s = seen.lock().unwrap().clone();
+    // 路徑：模型名在裡面，而且是 Gemini 的動作名
+    assert!(s[0].0.contains("/models/"), "{:?}", s[0].0);
+    assert!(s[0].0.contains(":generateContent"), "{:?}", s[0].0);
+    // 候選用 thinkingConfig.thinkingBudget
+    assert!(
+        s.iter().any(|(_, b)| b["generationConfig"]["thinkingConfig"]["thinkingBudget"]
+            .as_i64()
+            == Some(8192)),
+        "應送 generationConfig.thinkingConfig.thinkingBudget=8192"
+    );
 }
 
 /// 寫入記憶與「帶入」設定：只有明確答案才落庫，inconclusive 不寫。

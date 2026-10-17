@@ -40,7 +40,14 @@ pub(crate) struct ProbeCfg {
     pub scheme: String,
     /// 上游實際模型名（送出去的 `model` 欄位）
     pub actual_model: String,
-    pub format: String,
+    /// 這個模型的**協議**（`openai-chat` / `openai-responses` / `anthropic` / `gemini`）。
+    ///
+    /// 思考強度的欄位形狀是**協議級**的事實，不是來源格式：同一個 `auto` 來源
+    /// 底下，chat 模型吃 `reasoning_effort`、Anthropic 模型吃 `thinking.budget_tokens`、
+    /// Gemini 模型吃 `generationConfig.thinkingConfig.thinkingBudget`。
+    /// 舊版拿來源的 `api_format` 當開關，於是佈局偵測把它設成 `auto` 之後
+    /// **每個模型都被擋掉**（2026-10-11 的 bug）。
+    pub protocol: String,
     /// 逐協議路徑前綴的原始 JSON（空 = 用預設）。見 `models/prefixes.rs`。
     pub prefixes: String,
 }
@@ -81,10 +88,10 @@ pub(crate) fn probe_read_cfg(
     provider_id: i64,
     model_id: i64,
 ) -> Result<ProbeCfg, String> {
-    let (base, key, scheme, format, actual_model, prefixes) = conn
+    let (base, key, scheme, format, actual_model, prefixes, model_protocol) = conn
         .query_row(
             "SELECT p.base_url, p.api_key, p.auth_scheme, p.api_format, m.actual_model,
-                    p.protocol_prefixes
+                    p.protocol_prefixes, m.protocol
              FROM provider_models m JOIN providers p ON p.id = m.provider_id
              WHERE m.id = ?1 AND m.provider_id = ?2",
             rusqlite::params![model_id, provider_id],
@@ -96,6 +103,7 @@ pub(crate) fn probe_read_cfg(
                     r.get::<_, String>(3)?,
                     r.get::<_, String>(4)?,
                     r.get::<_, String>(5)?,
+                    r.get::<_, String>(6)?,
                 ))
             },
         )
@@ -109,21 +117,27 @@ pub(crate) fn probe_read_cfg(
     if actual_model.trim().is_empty() {
         return Err("這個模型沒有填「實際請求模型」".to_string());
     }
-    match format.as_str() {
-        "openai-chat" | "mixed" | "openai-responses" => {}
-        other => {
-            return Err(format!(
-                "「{other}」渠道的思考強度不是用 reasoning_effort 控制的\
-                 （Anthropic 用 thinking、Gemini 用 thinkingConfig），無法用這個方式探測"
-            ))
+    // 機制：**逐模型協議優先**，其次來源宣告，最後猜 chat（最常見）。
+    let protocol = {
+        let m = model_protocol.trim();
+        if !m.is_empty() {
+            m.to_string()
+        } else {
+            match format.trim() {
+                "openai-responses" => "openai-responses".to_string(),
+                "anthropic" => "anthropic".to_string(),
+                "gemini" => "gemini".to_string(),
+                // mixed / auto / 其他：先當 chat（最常見），錯了自己會回報不支援
+                _ => "openai-chat".to_string(),
+            }
         }
-    }
+    };
     Ok(ProbeCfg {
         base: base.trim_end_matches('/').to_string(),
         key,
         scheme,
         actual_model,
-        format,
+        protocol,
         prefixes,
     })
 }
@@ -173,38 +187,79 @@ pub(super) fn client() -> Result<reqwest::blocking::Client, String> {
         .map_err(|e| e.to_string())
 }
 
-/// 依渠道格式組出請求（`level = None` 代表基準請求）。
-fn build_request(
-    cfg: &ProbeCfg,
-    level: Option<&str>,
-) -> (String, serde_json::Value) {
-    if cfg.format == "openai-responses" {
-        let mut body = serde_json::json!({
-            "model": cfg.actual_model,
-            "input": [{"type": "message", "role": "user",
-                       "content": [{"type": "input_text", "text": "hi"}]}],
-            "max_output_tokens": 4,
-            "stream": false,
-        });
-        if let Some(lv) = level {
-            body["reasoning"] = serde_json::json!({"effort": lv});
+/// 這個協議的思考強度欄位形狀（`level = None` 代表基準請求）。
+///
+/// 四種協議三種機制：
+/// - chat：攤平的 `reasoning_effort`
+/// - responses：`reasoning: {effort}`
+/// - anthropic：`thinking: {type:"enabled", budget_tokens}`
+/// - gemini：`generationConfig.thinkingConfig.thinkingBudget`
+///
+/// 後兩者是「預算式」—— 檔位不是離散值，而是映射到一個 token 預算。
+/// 所以探測它們問的是「這個預算收不收」，不是「這個名字認不認」。
+fn build_request(cfg: &ProbeCfg, level: Option<&str>) -> (String, serde_json::Value) {
+    let base = cfg.base.trim_end_matches('/');
+    let prefix = crate::models::ProtocolPrefixes::parse(&cfg.prefixes)
+        .for_protocol(&cfg.protocol);
+    let m = cfg.actual_model.trim().trim_start_matches("models/");
+    match cfg.protocol.as_str() {
+        "openai-responses" => {
+            let mut body = serde_json::json!({
+                "model": cfg.actual_model,
+                "input": [{"type": "message", "role": "user",
+                           "content": [{"type": "input_text", "text": "hi"}]}],
+                "max_output_tokens": 4,
+                "stream": false,
+            });
+            if let Some(lv) = level {
+                body["reasoning"] = serde_json::json!({"effort": lv});
+            }
+            (format!("{base}{prefix}/responses"), body)
         }
-        (format!("{}/responses", cfg.base), body)
-    } else {
-        // openai-chat / mixed：翻譯路徑產生的就是攤平的 reasoning_effort
-        let mut body = serde_json::json!({
-            "model": cfg.actual_model,
-            "messages": [{"role": "user", "content": "hi"}],
-            "max_tokens": 4,
-            "stream": false,
-        });
-        if let Some(lv) = level {
-            body["reasoning_effort"] = serde_json::json!(lv);
+        "anthropic" => {
+            // Anthropic 的 `max_tokens` 必填，而且要**大於** thinking 預算
+            let budget = level.and_then(crate::translate::thinking_budget);
+            let mut body = serde_json::json!({
+                "model": cfg.actual_model,
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": budget.map(|b| b + 1024).unwrap_or(4),
+            });
+            if let Some(b) = budget {
+                body["thinking"] = serde_json::json!({"type": "enabled", "budget_tokens": b});
+            }
+            (format!("{base}{prefix}/messages"), body)
         }
-        (format!("{}/chat/completions", cfg.base), body)
+        "gemini" => {
+            let mut gc = serde_json::json!({"maxOutputTokens": 4});
+            if let Some(b) = level.and_then(crate::translate::thinking_budget) {
+                gc["thinkingConfig"] = serde_json::json!({"thinkingBudget": b});
+            }
+            (
+                format!("{base}{prefix}/models/{m}:generateContent"),
+                serde_json::json!({
+                    "contents": [{"role": "user", "parts": [{"text": "hi"}]}],
+                    "generationConfig": gc,
+                }),
+            )
+        }
+        // openai-chat（以及所有未知協議的預設）：攤平的 reasoning_effort
+        _ => {
+            let mut body = serde_json::json!({
+                "model": cfg.actual_model,
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 4,
+                "stream": false,
+            });
+            if let Some(lv) = level {
+                body["reasoning_effort"] = serde_json::json!(lv);
+            }
+            (format!("{base}{prefix}/chat/completions"), body)
+        }
     }
 }
 
+/// 送一筆探測。鑑權**依協議**決定（`/messages` 只認 `x-api-key`、
+/// Gemini 只認 `x-goog-api-key`），與路由同一套規則。
 fn send(cfg: &ProbeCfg, body: &serde_json::Value) -> Result<(u16, String), String> {
     let url = build_request(cfg, None).0;
     let c = client()?;
@@ -219,12 +274,18 @@ fn send(cfg: &ProbeCfg, body: &serde_json::Value) -> Result<(u16, String), Strin
         // 而 Cloudflare 對泛用的程式庫 UA 會回 403。
         .header("x-opencode-session", "tokentoll-probe")
         .header("User-Agent", "tokentoll-probe/0.1");
-    req = match cfg.scheme.as_str() {
-        "goog-key" => req.header("x-goog-api-key", &cfg.key),
+    req = match cfg.protocol.as_str() {
         "anthropic" => req
             .header("x-api-key", &cfg.key)
             .header("anthropic-version", "2023-06-01"),
-        _ => req.bearer_auth(&cfg.key),
+        "gemini" => req.header("x-goog-api-key", &cfg.key),
+        _ => match cfg.scheme.as_str() {
+            "goog-key" => req.header("x-goog-api-key", &cfg.key),
+            "anthropic" => req
+                .header("x-api-key", &cfg.key)
+                .header("anthropic-version", "2023-06-01"),
+            _ => req.bearer_auth(&cfg.key),
+        },
     };
     let resp = req.send().map_err(|e| {
         if e.is_timeout() {
