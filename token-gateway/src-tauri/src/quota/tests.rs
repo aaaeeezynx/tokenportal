@@ -99,3 +99,41 @@ fn query_all_skips_disabled_and_non_go() {
     assert!(out.iter().any(|q| q.kind == "claude"));
     assert!(out.iter().any(|q| q.kind == "codex"));
 }
+
+/// ★ 迴歸（2026-10-11）：`detect_opencode_go` 要認**兩種** base 佈局。
+///
+/// 舊版寫死比對 `"opencode.ai/zen/go"`，於是「一鍵自動偵測連線設定」把 base
+/// 換成官方記載的 `/inference/go` 之後，用量頁的 OpenCode Go 配額卡片整張不見。
+#[test]
+fn detect_accepts_both_opencode_go_layouts() {
+    assert!(detect_opencode_go("https://opencode.ai/zen/go/v1"), "舊佈局");
+    assert!(
+        detect_opencode_go("https://opencode.ai/inference/go"),
+        "官方文件記載的新佈局"
+    );
+    // 以下都不該命中
+    assert!(!detect_opencode_go("https://opencode.ai/zen/v1"), "不是 Go 方案");
+    assert!(!detect_opencode_go("https://example.test/go"), "不是 opencode");
+    assert!(
+        !detect_opencode_go("https://opencode.ai/google/v1beta"),
+        "`go` 必須是獨立的路徑段，不能誤命中 /google"
+    );
+}
+
+/// ★ 迴歸：用量端點在兩種 base 下都是 `.../go/v1/usage`。
+#[test]
+fn usage_url_works_for_both_layouts() {
+    assert_eq!(
+        usage_url("https://opencode.ai/zen/go/v1"),
+        "https://opencode.ai/zen/go/v1/usage"
+    );
+    assert_eq!(
+        usage_url("https://opencode.ai/inference/go"),
+        "https://opencode.ai/inference/go/v1/usage"
+    );
+    // 結尾斜線不影響
+    assert_eq!(
+        usage_url("https://opencode.ai/inference/go/"),
+        "https://opencode.ai/inference/go/v1/usage"
+    );
+}

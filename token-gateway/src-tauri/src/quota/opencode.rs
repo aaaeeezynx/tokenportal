@@ -8,7 +8,18 @@ use super::types::{QuotaWindow, SubscriptionQuota};
 // ------------------------------------------------------------ OpenCode Go ---
 
 pub(crate) fn detect_opencode_go(base_url: &str) -> bool {
-    base_url.to_lowercase().contains("opencode.ai/zen/go")
+    let lower = base_url.to_lowercase();
+    if !lower.contains("opencode.ai") {
+        return false;
+    }
+    // base 有兩種佈局，都是真實位址：
+    //   `https://opencode.ai/zen/go/v1`（舊，只有三種協議）
+    //   `https://opencode.ai/inference/go`（2026-10-11 起，官方文件記載）
+    // 兩者的 `go` 都是**獨立的路径段** —— 用段比對，避免誤命中 `/google`。
+    //
+    // 2026-10-11 的 bug：舊版寫死比對 `"opencode.ai/zen/go"`，於是「一鍵自動
+    // 偵測連線設定」把 base 換成 `/inference/go` 之後，配額卡片整張不見。
+    lower.split('/').any(|s| s == "go")
 }
 
 /// 解析 `/usage` 回包：rolling/weekly/monthly 三窗口。
@@ -48,14 +59,26 @@ pub(crate) fn parse_opencode_windows(body: &Value) -> Vec<QuotaWindow> {
     out
 }
 
+/// 用量端點：`.../go/v1/usage`。
+///
+/// 兩種 base 佈局都成立：
+/// - `/zen/go/v1`（舊）→ 去掉結尾 `/v1` 成 `/zen/go` → `/zen/go/v1/usage` ✅
+/// - `/inference/go`（官方文件記載）→ `/inference/go/v1/usage` ✅
+///
+/// 直接接 `/usage` 在新 base 上會 404（實測 2026-10-11），所以不能靠字串相接。
+pub(crate) fn usage_url(base_url: &str) -> String {
+    let base = base_url.trim_end_matches('/');
+    let stem = base.strip_suffix("/v1").unwrap_or(base);
+    format!("{stem}/v1/usage")
+}
+
 pub(crate) fn query_opencode_go(provider_id: i64, name: &str, base_url: &str, api_key: &str) -> SubscriptionQuota {
     let key = format!("opencode-go:{provider_id}");
     let title = format!("OpenCode Go（{name}）");
     if api_key.trim().is_empty() {
         return SubscriptionQuota::no_credentials(&key, &title, "opencode-go", "該來源未填寫 API Key");
     }
-    let base = base_url.trim_end_matches('/');
-    let url = format!("{base}/usage");
+    let url = usage_url(base_url);
     let client = match reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .user_agent("tokentoll/0.1 quota")

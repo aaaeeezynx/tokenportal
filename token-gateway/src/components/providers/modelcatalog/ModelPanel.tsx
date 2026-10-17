@@ -31,6 +31,21 @@ import {
   DEFAULT_CONTEXT_WINDOW,
 } from "./ContextWindowField";
 
+/**
+ * 批次偵測的一行結果 —— **只有名稱與支援的檔位**。
+ *
+ * 使用者要的是 `模型名：low / medium / high / max`，不要協議名、也不要
+ * 「不支援 …」的清單（那些在單一模型的卡片裡看得到）。
+ */
+function shortLine(
+  name: string,
+  rep: { aborted: string | null; supported: string[] },
+): string {
+  if (rep.aborted) return `${name}：偵測失敗`;
+  if (rep.supported.length === 0) return `${name}：不支援思考強度`;
+  return `${name}：${rep.supported.join(" / ")}`;
+}
+
 export function ModelPanel(props: { provider: Provider; rowsClassName?: string; apiKeyOverride?: string; baseUrlOverride?: string }) {
   const qc = useQueryClient();
   const pid = props.provider.id;
@@ -43,6 +58,8 @@ export function ModelPanel(props: { provider: Provider; rowsClassName?: string; 
     queryKey: ["umodels", pid],
     queryFn: () => api.modelsList(pid),
   });
+  /** 進度條的分母（批次偵測用；`probeDone` 是分子）。 */
+  const total = (rows.data || []).length;
   const [adding, setAdding] = useState(false);
   const [actual, setActual] = useState("");
   const [display, setDisplay] = useState("");
@@ -64,34 +81,23 @@ export function ModelPanel(props: { provider: Provider; rowsClassName?: string; 
       setProbeAllReport([]);
       const out: string[] = [];
       for (let i = 0; i < list.length; i++) {
+        // 進度以「已完成」計：開始第 i 個時，前 i 個已經跑完
         setProbeDone(i);
         const r = list[i];
         try {
-          // 先協議、後強度：協議不通就沒必要測強度（見 ModelRowAcc 的同名註解）
-          const proto = await api.modelProbeProtocol(pid, r.id);
-          if (proto.protocol !== "chat" && proto.protocol !== "responses") {
-            out.push(
-              `${r.display_name}：協議 ${proto.protocol ?? "三種都不通"}` +
-                (proto.protocol === "anthropic"
-                  ? "（只走 Anthropic，Codex 到不了）"
-                  : "（請確認模型名與金鑰）"),
-            );
-            setProbeAllReport([...out]);
-            continue;
-          }
+          // 先協議、後強度：協議不通就沒必要測強度（見 ModelRowAcc 的同名註解）。
+          //
+          // 2026-10-11：**四種協議都能測了**（探測器改依協議選機制：
+          // chat/responses 用 reasoning_effort、anthropic 用 thinking、
+          // gemini 用 thinkingConfig），所以不再只跑 chat/responses。
+          await api.modelProbeProtocol(pid, r.id);
           const rep = await api.modelProbeReasoning(pid, r.id);
-          out.push(
-            `${r.display_name}：${proto.protocol}　` +
-              (rep.aborted
-                ? `失敗（${rep.aborted}）`
-                : `${rep.supported.join(" / ") || "（無支援強度）"}` +
-                  (rep.unsupported.length
-                    ? `　不支援 ${rep.unsupported.join(" / ")}`
-                    : "")),
-          );
+          out.push(shortLine(r.display_name, rep));
         } catch (e) {
-          out.push(`${r.display_name}：${String(e)}`);
+          out.push(`${r.display_name}：偵測失敗`);
+          void e;
         }
+        setProbeDone(i + 1);
         setProbeAllReport([...out]);
       }
       setProbeDone(list.length);
@@ -186,12 +192,24 @@ export function ModelPanel(props: { provider: Provider; rowsClassName?: string; 
           title="依序實測本來源每個模型支援哪些思考強度，並帶入設定（會對上游發真正的請求）"
           onClick={() => probeAll.mutate()}
         >
-          {probeAll.isPending ? `偵測中… ${probeDone}/${(rows.data || []).length}` : "偵測全部模型的思考強度"}
+          {probeAll.isPending ? "偵測中…" : "偵測全部模型的思考強度"}
         </button>
         <span className="text-[11px] text-fg/30">
           逐一實測，約 9 筆請求／模型；只改動思考等級，不動其他設定
         </span>
       </div>
+      {probeAll.isPending && (
+        <div className="mb-3">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-fg/10">
+            <div
+              className="h-full rounded-full bg-(--mac-accent) transition-[width] duration-300"
+              style={{
+                width: `${total > 0 ? Math.round((probeDone / total) * 100) : 0}%`,
+              }}
+            />
+          </div>
+        </div>
+      )}
       {probeAllReport.length > 0 && (
         <div className="mb-2 space-y-1 rounded-lg bg-fg/[0.03] px-3 py-2 text-[11px]">
           {probeAllReport.map((line) => (
