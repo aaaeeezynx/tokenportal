@@ -49,6 +49,120 @@ fn cfg(port: u16, format: &str) -> ProbeCfg {
     }
 }
 
+/// 起一個「只有 Gemini 路徑與 `x-goog-api-key` 才通」的假上游。
+///
+/// 回傳 `(port, 觀察到的請求)`；每筆記下 `(路徑, 有沒有 x-goog-api-key)`。
+/// 測試據此斷言**鑑權與形狀都對** —— 只斷言「探測成功」看不出是哪一項錯了。
+#[allow(clippy::type_complexity)]
+fn fake_gemini_upstream() -> (u16, std::sync::Arc<std::sync::Mutex<Vec<(String, bool)>>>) {
+    let seen: std::sync::Arc<std::sync::Mutex<Vec<(String, bool)>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen_srv = seen.clone();
+    let app = axum::Router::new().fallback(
+        move |uri: axum::http::Uri,
+              headers: axum::http::HeaderMap,
+              axum::Json(body): axum::Json<serde_json::Value>| {
+            let seen = seen_srv.clone();
+            async move {
+                let path = uri.path().to_string();
+                let has_key = headers.contains_key("x-goog-api-key");
+                seen.lock().unwrap().push((path.clone(), has_key));
+                // 只有 Gemini 的路徑與鑑權才通
+                if !path.contains(":generateContent") {
+                    return (axum::http::StatusCode::NOT_FOUND, "not found".to_string());
+                }
+                if !has_key {
+                    return (
+                        axum::http::StatusCode::UNAUTHORIZED,
+                        "missing x-goog-api-key".to_string(),
+                    );
+                }
+                // 形狀：Gemini 用 contents/parts，不是 chat 的 messages
+                if body.get("contents").is_none() {
+                    return (
+                        axum::http::StatusCode::BAD_REQUEST,
+                        format!("expected contents/parts, got {body}"),
+                    );
+                }
+                (axum::http::StatusCode::OK, r#"{"candidates":[]}"#.to_string())
+            }
+        },
+    );
+    let (tx, rx) = std::sync::mpsc::channel::<u16>();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async move {
+            let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            tx.send(l.local_addr().unwrap().port()).unwrap();
+            axum::serve(l, app).await.unwrap();
+        });
+    });
+    (rx.recv().unwrap(), seen)
+}
+
+
+
+
+/// ★ 探測器要認得 Gemini：**模型名在路徑裡**、內容是 `contents/parts`、
+/// 鑑權是 `x-goog-api-key`。
+///
+/// 2026-10-11 之前探測只試三種協議，Gemini 模型會被報成「三種都不通」——
+/// 那是誤導，它其實只是第四種。
+#[test]
+fn protocol_probe_detects_gemini() {
+    let (port, seen) = fake_gemini_upstream();
+    let mut c = cfg(port, "gemini");
+    c.actual_model = "gemini-2.5-flash".into();
+    let rep = probe_protocol_http(&c);
+
+    assert_eq!(rep.protocol.as_deref(), Some("gemini"), "{rep:?}");
+    assert!(rep.definitive, "{rep:?}");
+    assert_eq!(rep.requests, 1, "來源宣告 gemini → 第一筆就中");
+
+    let s = seen.lock().unwrap().clone();
+    assert_eq!(s.len(), 1, "{s:?}");
+    assert!(
+        s[0].0.contains("/models/gemini-2.5-flash:generateContent"),
+        "模型名要在路徑裡：{s:?}"
+    );
+    assert!(s[0].1, "Gemini 必須帶 x-goog-api-key：{s:?}");
+    assert!(rep.summary.contains("Gemini"), "{}", rep.summary);
+}
+
+/// `models/` 前綴不想被重複：使用者填 `models/gemini-x` 也要能通。
+#[test]
+fn probe_strips_redundant_models_prefix_for_gemini() {
+    let (port, seen) = fake_gemini_upstream();
+    let mut c = cfg(port, "gemini");
+    c.actual_model = "models/gemini-2.5-flash".into();
+    let rep = probe_protocol_http(&c);
+    assert_eq!(rep.protocol.as_deref(), Some("gemini"), "{rep:?}");
+    let s = seen.lock().unwrap().clone();
+    assert!(
+        s[0].0.contains("/models/gemini-2.5-flash:generateContent"),
+        "不該變成 /models/models/…：{s:?}"
+    );
+}
+
+/// 來源明確宣告某種協議時，探測先試它（省請求）。
+#[test]
+fn probe_order_tries_the_declared_protocol_first() {
+    assert_eq!(probe_order("gemini")[0], "gemini");
+    assert_eq!(probe_order("anthropic")[0], "anthropic");
+    assert_eq!(probe_order("openai-responses")[0], "responses");
+    assert_eq!(probe_order("openai-chat")[0], "chat");
+    // mixed / auto 沒有單一答案 → 保持原順序
+    assert_eq!(probe_order("mixed")[0], "chat");
+    assert_eq!(probe_order("auto")[0], "chat");
+    // 四種都要在
+    let mut all = probe_order("auto");
+    all.sort_unstable();
+    assert_eq!(all, vec!["anthropic", "chat", "gemini", "responses"]);
+}
+
 /// ★ 迴歸（2026-10-10 由真機測試抓到）：**暫時性失敗不是「協議不支援」**。
 ///
 /// 當時 `deepseek-v4.1-flash` 的 chat／responses 剛好回 502（上游暫時故障），
@@ -241,48 +355,4 @@ fn anthropic_only_model_is_included_in_the_codex_catalog() {
         "Anthropic-only 的模型現在用得了，必須出現在目錄裡：{slugs:?}"
     );
     assert!(slugs.contains(&"deepseek-v4.1-flash"), "{slugs:?}");
-}
-
-/// 哨兵鍵不會干擾換手用的逐宣告記憶。
-#[test]
-fn probe_key_does_not_shadow_declared_protocol_memory() {
-    let dir = tempfile::tempdir().unwrap();
-    let conn = crate::db::open_and_ensure(&dir.path().join("k.db")).unwrap();
-    let pid = seed_provider(&conn, "k");
-    crate::trace::remember_protocol(&conn, pid, "m", PROBED_PROTOCOL_KEY, "anthropic").unwrap();
-    crate::trace::remember_protocol(&conn, pid, "m", "mixed", "openai-chat").unwrap();
-    // 換手讀的是宣告鍵，不受哨兵影響
-    assert_eq!(
-        crate::trace::load_protocol(&conn, pid, "m", "mixed").as_deref(),
-        Some("openai-chat")
-    );
-    assert_eq!(probed_protocol(&conn, pid, "m").as_deref(), Some("anthropic"));
-}
-
-/// 候選全滅時的訊息要講出真正的原因，而不是「請換模型或換來源」。
-///
-/// 2026-10-11 更新：反向翻譯器實作後，Anthropic-only 的模型**不再**是
-/// 「Codex 到不了」，所以訊息改成指向最可能的原因（鑑權）。
-#[test]
-fn mismatch_message_explains_anthropic_only_models() {
-    let dir = tempfile::tempdir().unwrap();
-    let conn = crate::db::open_and_ensure(&dir.path().join("m.db")).unwrap();
-    let pid = seed_provider(&conn, "msg");
-    crate::trace::remember_protocol(&conn, pid, "claude-haiku-5-5", PROBED_PROTOCOL_KEY, "anthropic")
-        .unwrap();
-
-    let msg = protocol_mismatch_message(Some(&conn), pid, "claude-haiku-5-5", 2);
-    assert!(msg.contains("Anthropic"), "{msg}");
-    assert!(msg.contains("翻譯"), "要說明網關已經翻譯過了：{msg}");
-    assert!(msg.contains("x-api-key"), "要指向最可能的原因（鑑權）：{msg}");
-    // 這句話已經不成立了 —— 翻譯器做好之後 Codex 到得了
-    assert!(!msg.contains("Codex 到不了"), "舊說法已過時：{msg}");
-    assert!(!msg.contains("請換模型或換來源"), "別再給那句沒用的建議：{msg}");
-
-    // 沒測過 → 引導去按偵測，而不是空泛地叫人換模型
-    let msg2 = protocol_mismatch_message(Some(&conn), pid, "unknown-model", 2);
-    assert!(msg2.contains("偵測"), "{msg2}");
-    // 資料庫不可用也要給得出話
-    let msg3 = protocol_mismatch_message(None, pid, "x", 1);
-    assert!(!msg3.is_empty());
 }

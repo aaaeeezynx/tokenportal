@@ -26,10 +26,11 @@ pub(super) async fn prelude(
     started: &Instant,
     app: &str,
     headers: &HeaderMap,
+    query: Option<&str>,
     body: Body,
 ) -> Result<Prelude, Box<Response>> {
-    // ---- 鑑權
-    let Some(secret) = bearer(headers) else {
+    // ---- 鑑權（含 Gemini 的 x-goog-api-key 與 ?key=，見 util::bearer）
+    let Some(secret) = bearer(headers, query) else {
         return Err(Box::new(reject(
             ctx,
             started,

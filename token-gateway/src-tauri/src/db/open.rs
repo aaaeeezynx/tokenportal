@@ -259,6 +259,31 @@ pub(crate) fn open_and_ensure(path: &Path) -> Result<Connection, String> {
         )
         .map_err(|e| e.to_string())?;
     }
+    // v17 資料修正（2026-10-11）：探測器原本把**短名**寫進了 `protocol`
+    //（`chat` / `responses`），但路由與驗證用的是**長名**
+    //（`openai-chat` / `openai-responses`）。路由拿到認不得的值會退成
+    // `Unknown` → 直通，Responses 客戶端因此被送到 `/responses` 而不是
+    // `/chat/completions`。
+    //
+    // 這裡把舊資料就地正規化。**冪等**（跑幾次結果都一樣），所以不需要版本閘門。
+    // 讀取端 `models::model_protocol` 也會容忍舊值 —— 兩邊都做是為了讓 UI
+    // 顯示的欄位值本身也正確。
+    for (from, to) in [
+        ("chat", "openai-chat"),
+        ("responses", "openai-responses"),
+    ] {
+        conn.execute(
+            "UPDATE provider_models SET protocol=?1 WHERE protocol=?2",
+            [to, from],
+        )
+        .map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE provider_model_protocol SET actual_format=?1
+             WHERE declared_format='__probe__' AND actual_format=?2",
+            [to, from],
+        )
+        .map_err(|e| e.to_string())?;
+    }
     // 列齊了再建索引（整批 SCHEMA 先於 ALTER，老庫在此之前無此列）
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_logs_import ON request_logs(import_path)",

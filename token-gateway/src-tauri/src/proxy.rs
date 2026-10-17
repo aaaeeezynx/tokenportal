@@ -184,7 +184,18 @@ async fn proxy_handler(State(ctx): State<ProxyCtx>, req: axum::http::Request<Bod
         mut authed,
         bytes,
         conn,
-    } = match prelude(&ctx, &started, &app, &parts.headers, body).await {
+    } = match prelude(
+        &ctx,
+        &started,
+        &app,
+        &parts.headers,
+        // Gemini 客戶端把金鑰放在 `?key=`（Google 官方範例的寫法），
+        // 所以要一併傳查詢字串進去；它會在轉發前被剝掉。
+        parts.uri.query(),
+        body,
+    )
+    .await
+    {
         Ok(p) => p,
         Err(resp) => return *resp,
     };

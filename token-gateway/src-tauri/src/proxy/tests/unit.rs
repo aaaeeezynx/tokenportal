@@ -10,6 +10,53 @@
     use super::*;
     use axum::http::HeaderValue;
 
+    /// ★ 本地金鑰的四種帶法。後兩種是 2026-10-11 補的：
+    /// **原生 Gemini 客戶端只會用這兩種**，少了它們 Gemini 進站一律 401，
+    /// `(Gemini, Gemini)` 那一格等於形同虛設。
+    #[test]
+    fn bearer_accepts_all_four_conventions() {
+        let empty = axum::http::HeaderMap::new;
+        let h = |k: &str, v: &str| {
+            let mut m = axum::http::HeaderMap::new();
+            m.insert(
+                axum::http::HeaderName::from_bytes(k.as_bytes()).unwrap(),
+                HeaderValue::from_str(v).unwrap(),
+            );
+            m
+        };
+        // 1. Authorization: Bearer（OpenAI / Codex / dsh）
+        assert_eq!(
+            bearer(&h("authorization", "Bearer sk-local-1"), None).as_deref(),
+            Some("sk-local-1")
+        );
+        // 2. x-api-key（Claude Code / Anthropic SDK）
+        assert_eq!(
+            bearer(&h("x-api-key", "sk-local-2"), None).as_deref(),
+            Some("sk-local-2")
+        );
+        // 3. x-goog-api-key（Gemini SDK）
+        assert_eq!(
+            bearer(&h("x-goog-api-key", "sk-local-3"), None).as_deref(),
+            Some("sk-local-3")
+        );
+        // 4. ?key=（Google 官方 curl 範例的寫法）
+        assert_eq!(
+            bearer(&empty(), Some("alt=sse&key=sk-local-4&x=1")).as_deref(),
+            Some("sk-local-4")
+        );
+        // 優先序：Authorization 勝過其他三者
+        let mut m = h("authorization", "Bearer win");
+        m.insert(
+            axum::http::HeaderName::from_static("x-goog-api-key"),
+            HeaderValue::from_static("lose"),
+        );
+        assert_eq!(bearer(&m, Some("key=lose2")).as_deref(), Some("win"));
+        // 都沒有、或 key 是空的 → None
+        assert_eq!(bearer(&empty(), None), None);
+        assert_eq!(bearer(&empty(), Some("key=")), None);
+        assert_eq!(bearer(&empty(), Some("nokey=1")), None);
+    }
+
     #[test]
     fn stream_options_only_for_chat() {
         // 直通：看客戶端打的端點

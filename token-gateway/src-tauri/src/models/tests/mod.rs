@@ -11,6 +11,7 @@ use super::*;
 mod catalog;
 mod live_protocol;
 mod probe;
+mod protocol_memory;
 mod protocol_probe;
 mod reasoning;
 

@@ -14,9 +14,15 @@ pub const REASONINGS: [&str; 9] = [
 
 /// 逐模型協議的合法值（空 = 未偵測）。
 ///
-/// **刻意不含 `gemini`**：Gemini 的 URL 形狀（模型名在路徑裡）與鑑權都不同，
-/// 自動探測不划算，維持由 `providers.api_format` 明確指定。
-pub const MODEL_PROTOCOLS: [&str; 3] = ["openai-chat", "openai-responses", "anthropic"];
+/// 2026-10-11 補上 `gemini`：Gemini 原生請求**只有** `(Gemini, Gemini)` 這一格
+/// 是通的，其餘全是矩陣明定的 `E_GEMINI_IN_ONLY`。在那之前，一個同時服務
+/// Gemini 模型與 OpenAI 模型的來源（`api_format = auto`）沒辦法把「這個模型是
+/// Gemini 原生的」講出來，於是 Gemini 客戶端在第一個候選就被擋下。
+///
+/// 注意：這是**讓 Gemini 客戶端用得了 Gemini 模型**。要讓 OpenAI 系客戶端
+/// （Codex 等）也用 Gemini 模型，還需要 OpenAI ⇄ Gemini 的翻譯器。
+pub const MODEL_PROTOCOLS: [&str; 4] =
+    ["openai-chat", "openai-responses", "anthropic", "gemini"];
 
 #[derive(Debug, Clone, Serialize)]
 pub struct UsableModel {

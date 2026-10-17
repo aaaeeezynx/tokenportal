@@ -163,7 +163,20 @@ pub(crate) fn infer_app(headers: &HeaderMap) -> String {
     }
     "unknown".into()
 }
-pub(super) fn bearer(headers: &HeaderMap) -> Option<String> {
+/// 從入站請求取出本地金鑰。依序嘗試（覆蓋各家 SDK 的慣例）：
+///
+/// 1. `Authorization: Bearer`（OpenAI / Codex / dsh）
+/// 2. `x-api-key`（Claude Code / Anthropic SDK）
+/// 3. `x-goog-api-key`（**Gemini SDK**，2026-10-11 補）
+/// 4. `?key=` 查詢參數（Google 官方 curl 範例的寫法，2026-10-11 補）
+///
+/// 3 與 4 是**原生 Gemini 客戶端唯一會用的方式** —— 它不會送 Bearer。
+/// 少了它們，Gemini 進站請求連閘道都進不來（一律 401），
+/// `(Gemini, Gemini)` 那一格等於形同虛設。
+///
+/// 查詢裡的 key 在轉發前會被 [`strip_key_param`] 拿掉、`x-goog-api-key` 也在
+/// [`is_hop_header`] 的跳過清單裡，所以**不會外洩給上游**。
+pub(super) fn bearer(headers: &HeaderMap, query: Option<&str>) -> Option<String> {
     // 優先 Authorization: Bearer（OpenAI / Codex / dsh）
     if let Some(v) = headers.get("authorization") {
         if let Ok(s) = v.to_str() {
@@ -175,12 +188,27 @@ pub(super) fn bearer(headers: &HeaderMap) -> Option<String> {
             }
         }
     }
-    // 備選：x-api-key（Claude Code / Anthropic SDK）
-    if let Some(v) = headers.get("x-api-key") {
-        if let Ok(s) = v.to_str() {
-            let k = s.trim();
-            if !k.is_empty() {
-                return Some(k.to_string());
+    // 備選：x-api-key（Claude Code / Anthropic SDK）、x-goog-api-key（Gemini SDK）
+    for name in ["x-api-key", "x-goog-api-key"] {
+        if let Some(v) = headers.get(name) {
+            if let Ok(s) = v.to_str() {
+                let k = s.trim();
+                if !k.is_empty() {
+                    return Some(k.to_string());
+                }
+            }
+        }
+    }
+    // 最後：?key=（Google 官方範例的寫法）
+    if let Some(q) = query {
+        for kv in q.split('&') {
+            if let Some((k, v)) = kv.split_once('=') {
+                if k.eq_ignore_ascii_case("key") {
+                    let v = v.trim();
+                    if !v.is_empty() {
+                        return Some(v.to_string());
+                    }
+                }
             }
         }
     }

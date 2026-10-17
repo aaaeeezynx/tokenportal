@@ -32,3 +32,6 @@
     // 單一來源同時服務多種協議（auto ＋ 逐模型協議）
     #[path = "e2e_strict/auto_protocol.rs"]
     mod auto_protocol;
+    // Gemini 客戶端在 auto 來源上用 Gemini 模型（2026-10-11）
+    #[path = "e2e_strict/gemini_auto.rs"]
+    mod gemini_auto;
