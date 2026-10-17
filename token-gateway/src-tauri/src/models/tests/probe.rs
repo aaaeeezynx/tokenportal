@@ -58,6 +58,7 @@ fn cfg_for(port: u16) -> ProbeCfg {
         scheme: "bearer".into(),
         actual_model: "mimo-test".into(),
         format: "openai-chat".into(),
+        prefixes: String::new(),
     }
 }
 

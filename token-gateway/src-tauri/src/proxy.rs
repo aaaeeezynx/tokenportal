@@ -66,8 +66,8 @@ use {
     finish::{finish_response, FinishCtx},
     forward::{
         build_upstream_target, provider_name, resolve_model_provider, resolve_model_providers,
-        strip_for_upstream, translate_forward_body, BodyPrep, ForwardBody, ReroutedProvider,
-        TransSpec,
+        strip_for_upstream, strip_leading_version, translate_forward_body, BodyPrep, ForwardBody,
+        ReroutedProvider, TransSpec,
     },
     failover::{learn_format, learned_format, plan_attempts, Attempt},
     health::order_by_health,
@@ -262,6 +262,7 @@ async fn proxy_handler(State(ctx): State<ProxyCtx>, req: axum::http::Request<Bod
                     authed.provider_api_key = p.api_key.clone();
                     authed.provider_auth_scheme = p.scheme.clone();
                     authed.provider_api_format = p.format.clone();
+                    authed.provider_protocol_prefixes = p.prefixes.clone();
                 }
                 None => continue,
             }

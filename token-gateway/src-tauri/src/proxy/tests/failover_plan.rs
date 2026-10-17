@@ -20,6 +20,7 @@ fn prov_with(id: i64, fmt: &str, protocol: &str) -> ReroutedProvider {
         scheme: "bearer".into(),
         format: fmt.into(),
         protocol: protocol.into(),
+        prefixes: String::new(),
     }
 }
 

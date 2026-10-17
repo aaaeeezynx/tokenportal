@@ -22,6 +22,7 @@
 mod catalog;
 mod codex_catalog;
 mod crud;
+mod prefixes;
 mod probe;
 mod protocol_probe;
 mod reasoning;
@@ -32,6 +33,7 @@ mod tests;
 pub use catalog::*;
 pub(crate) use codex_catalog::*;
 pub use crud::*;
+pub use prefixes::*;
 pub use probe::*;
 pub use protocol_probe::*;
 pub(crate) use reasoning::*;

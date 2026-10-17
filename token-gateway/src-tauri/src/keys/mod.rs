@@ -207,14 +207,16 @@ pub(crate) struct AuthedKey {
     pub provider_api_key: String,
     /// 上游鑑權方式：bearer | goog-key | anthropic。
     pub provider_auth_scheme: String,
-    /// 上游格式：anthropic | openai-chat | openai-responses | gemini | mixed。
+    /// 上游格式：anthropic | openai-chat | openai-responses | gemini | mixed | auto。
     pub provider_api_format: String,
+    /// 逐協議路徑前綴的原始 JSON（空 = 用預設）。見 `models/prefixes.rs`。
+    pub provider_protocol_prefixes: String,
     /// 直連上游模式：Bearer 即上游渠道自身的 api_key，不經本地 Key 轉發；
     /// 僅允許該渠道、不做跨來源路由；用量照常記錄（僅不計本地 Key 配額）。
     pub direct: bool,
 }
 
-/// auth_key 查詢行的列類型（id, quota, used, qpm, models, apps, pid, base, key, scheme, format, exp, enabled）。
+/// auth_key 查詢行的列類型（id, quota, used, qpm, models, apps, pid, base, key, scheme, format, exp, enabled, prefixes）。
 type AuthRow = (
     i64,
     i64,
@@ -229,6 +231,7 @@ type AuthRow = (
     Option<String>,
     Option<i64>,
     i64,
+    Option<String>,
 );
 
 pub(crate) fn auth_key(conn: &Connection, secret: &str) -> Result<AuthedKey, (u16, crate::error::CmdError)> {
@@ -236,7 +239,8 @@ pub(crate) fn auth_key(conn: &Connection, secret: &str) -> Result<AuthedKey, (u1
     let row: rusqlite::Result<AuthRow> = conn.query_row(
         "SELECT k.id, k.quota_tokens, k.used_tokens, k.rate_limit_qpm,
                 k.allowed_models_json, k.allowed_apps_json, k.provider_id,
-                p.base_url, p.api_key, p.auth_scheme, p.api_format, k.expires_at, k.enabled
+                p.base_url, p.api_key, p.auth_scheme, p.api_format, k.expires_at, k.enabled,
+                p.protocol_prefixes
          FROM local_keys k LEFT JOIN providers p ON p.id = k.provider_id
          WHERE k.key_hash = ?1",
         [&hash],
@@ -255,10 +259,26 @@ pub(crate) fn auth_key(conn: &Connection, secret: &str) -> Result<AuthedKey, (u1
                 r.get(10)?,
                 r.get(11)?,
                 r.get(12)?,
+                r.get(13)?,
             ))
         },
     );
-    let (id, quota, used, qpm, models_json, apps_json, pid, base_url, api_key, scheme, format, expires, enabled) =
+    let (
+        id,
+        quota,
+        used,
+        qpm,
+        models_json,
+        apps_json,
+        pid,
+        base_url,
+        api_key,
+        scheme,
+        format,
+        expires,
+        enabled,
+        prefixes,
+    ) =
         row.map_err(|_| (401u16, crate::error::CmdError::auth("無效的本地 Key")))?;
     if enabled == 0 {
         return Err((401, crate::error::CmdError::conflict("該 Key 已被停用")));
@@ -283,6 +303,7 @@ pub(crate) fn auth_key(conn: &Connection, secret: &str) -> Result<AuthedKey, (u1
         provider_api_key: api_key.unwrap_or_default(),
         provider_auth_scheme: scheme.unwrap_or_else(|| "bearer".to_string()),
         provider_api_format: format.unwrap_or_else(|| "openai-chat".to_string()),
+        provider_protocol_prefixes: prefixes.unwrap_or_default(),
         direct: false,
     })
 }
@@ -295,13 +316,13 @@ pub(crate) fn auth_direct(conn: &Connection, secret: &str) -> Result<AuthedKey, 
     if secret.trim().is_empty() {
         return Err((401, crate::error::CmdError::auth("無效的 Key")));
     }
-    let row: rusqlite::Result<(i64, String, String, String, String)> = conn.query_row(
-        "SELECT id, base_url, api_key, auth_scheme, api_format FROM providers
+    let row: rusqlite::Result<(i64, String, String, String, String, String)> = conn.query_row(
+        "SELECT id, base_url, api_key, auth_scheme, api_format, protocol_prefixes FROM providers
          WHERE enabled = 1 AND api_key IS NOT NULL AND api_key <> '' AND api_key = ?1",
         [secret],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
     );
-    let (pid, base_url, api_key, scheme, format) =
+    let (pid, base_url, api_key, scheme, format, prefixes) =
         row.map_err(|_| (401u16, crate::error::CmdError::auth("無效的 Key（既非本地 Key，也非已登記渠道的上游 Key）")))?;
     Ok(AuthedKey {
         id: -1,
@@ -313,6 +334,7 @@ pub(crate) fn auth_direct(conn: &Connection, secret: &str) -> Result<AuthedKey, 
         provider_api_key: api_key,
         provider_auth_scheme: scheme,
         provider_api_format: format,
+        provider_protocol_prefixes: prefixes,
         direct: true,
     })
 }

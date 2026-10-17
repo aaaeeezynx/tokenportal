@@ -58,7 +58,14 @@ pub(crate) use settings::*;
 /// `claude-haiku-5-5` 只吃 Anthropic Messages，其餘模型吃 OpenAI chat。
 /// 來源級的 `api_format` 描述不了，使用者只能把同一個訂閱拆成兩個來源 ——
 /// 金鑰重複，而且 App 的用量／成本／健康度統計被切碎（上游那邊本來只有一份額度）。
-pub const SCHEMA_VERSION: i32 = 17;
+/// v18（2026-10-11）：`providers` 補上 `protocol_prefixes`（逐協議路徑前綴，JSON）。
+///
+/// 動機：有些上游把協議做在**路徑前綴**裡，而不是靠端點字尾區分。實測 OpenCode Go
+/// 同一個 base 底下 `/openai/v1/chat/completions`、`/openai/v1/responses`、
+/// `/anthropic/v1/messages`、`/google/v1beta/models/{m}:generateContent` ——
+/// 用單一 `base_url` 加字尾描述不了，使用者只能為每種協議各開一個來源
+///（金鑰重複、統計被切碎）。有了前綴，**一個來源能服務全部四種**。
+pub const SCHEMA_VERSION: i32 = 18;
 
 /// 網關預設連接埠（C 方案：可在設定中修改；歷史預設 15721 與 cc-switch 衝突）。
 pub const DEFAULT_GATEWAY_PORT: u16 = 15722;

@@ -76,6 +76,8 @@ pub(super) fn seed_key(conn: &rusqlite::Connection, pid: i64, name: &str) -> Str
 
 #[path = "tests/unit.rs"]
 mod unit;
+#[path = "tests/prefixes.rs"]
+mod prefixes;
 #[path = "tests/failover_plan.rs"]
 mod failover_plan;
 #[path = "tests/strip.rs"]

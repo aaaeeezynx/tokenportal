@@ -14,6 +14,17 @@ CREATE TABLE IF NOT EXISTS providers (
     api_key TEXT NOT NULL DEFAULT '',
     auth_scheme TEXT NOT NULL DEFAULT 'bearer',
     models_json TEXT NOT NULL DEFAULT '[]',
+    -- 逐協議的路徑前綴（JSON；空字串 = 用預設）。schema v18，舊庫由 open.rs 補列。
+    --
+    -- 為什麼需要：有些上游把「協議」做在**路徑前綴**裡，而不是靠端點字尾區分。
+    -- 實測 OpenCode Go 的文件端點是
+    --   {base}/openai/v1/chat/completions
+    --   {base}/openai/v1/responses
+    --   {base}/anthropic/v1/messages
+    --   {base}/google/v1beta/models/{model}:generateContent
+    -- base 是同一個 —— 用單一 base_url 加字尾描述不了。有了這層前綴，
+    -- **一個來源就能服務全部四種協議**（不必為每種協議各開一個來源）。
+    protocol_prefixes TEXT NOT NULL DEFAULT '',
     priority INTEGER NOT NULL DEFAULT 0,
     enabled INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,

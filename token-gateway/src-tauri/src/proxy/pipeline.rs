@@ -192,6 +192,7 @@ pub(super) fn resolve_model(
             authed.provider_api_key = p.api_key;
             authed.provider_auth_scheme = p.scheme;
             authed.provider_api_format = p.format;
+            authed.provider_protocol_prefixes = p.prefixes;
             Ok(())
         }
         None => {

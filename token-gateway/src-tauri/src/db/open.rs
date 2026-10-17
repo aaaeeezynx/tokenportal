@@ -259,6 +259,23 @@ pub(crate) fn open_and_ensure(path: &Path) -> Result<Connection, String> {
         )
         .map_err(|e| e.to_string())?;
     }
+    // v17 → v18（2026-10-11）：`providers` 補上逐協議路徑前綴。
+    //
+    // 有些上游把協議做在**路徑前綴**裡（實測 OpenCode Go：同一 base 底下
+    // `/openai/v1/…`、`/anthropic/v1/…`、`/google/v1beta/…`），用單一
+    // base_url 加字尾描述不了。有了這層前綴，**一個來源能服務全部四種協議**。
+    let has_prefixes: bool = conn
+        .prepare("SELECT 1 FROM pragma_table_info('providers') WHERE name='protocol_prefixes'")
+        .map_err(|e| e.to_string())?
+        .exists([])
+        .map_err(|e| e.to_string())?;
+    if !has_prefixes {
+        conn.execute(
+            "ALTER TABLE providers ADD COLUMN protocol_prefixes TEXT NOT NULL DEFAULT ''",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+    }
     // v17 資料修正（2026-10-11）：探測器原本把**短名**寫進了 `protocol`
     //（`chat` / `responses`），但路由與驗證用的是**長名**
     //（`openai-chat` / `openai-responses`）。路由拿到認不得的值會退成

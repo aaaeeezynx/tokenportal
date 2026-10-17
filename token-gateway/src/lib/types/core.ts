@@ -27,6 +27,14 @@ export interface Provider {
   api_key: string;
   /** bearer（預設）| goog-key（Google x-goog-api-key） */
   auth_scheme: string;
+  /**
+   * 逐協議路徑前綴的 JSON（空 = 沒有）。
+   *
+   * 有些上游把協議做在**路徑前綴**裡（實測 OpenCode Go：同一個 base 底下
+   * `/openai/v1/…`、`/anthropic/v1/…`、`/google/v1beta/…`）。有了它，
+   * **一個來源能服務全部四種協議**，不必為每種協議各開一個來源。
+   */
+  protocol_prefixes: string;
   models: string[];
   priority: number;
   enabled: boolean;
@@ -39,6 +47,14 @@ export interface ProviderInput {
   base_url: string;
   api_key: string;
   auth_scheme: string;
+  /**
+   * 逐協議路徑前綴的 JSON（空 = 沒有）。
+   *
+   * 有些上游把協議做在**路徑前綴**裡（實測 OpenCode Go：同一個 base 底下
+   * `/openai/v1/…`、`/anthropic/v1/…`、`/google/v1beta/…`）。有了它，
+   * **一個來源能服務全部四種協議**，不必為每種協議各開一個來源。
+   */
+  protocol_prefixes: string;
   models: string[];
   priority: number;
   enabled: boolean;
@@ -57,6 +73,8 @@ export interface Preset {
   api_format: string;
   auth_scheme: string;
   app_type: string;
+  /** 逐協議路徑前綴的 JSON（只有需要的預設才有） */
+  protocol_prefixes: string;
   /** 空字串＝沒有特別提醒 */
   note: string;
 }

@@ -139,9 +139,13 @@ fn summary_for(protocol: Option<&str>, definitive: bool, saw_inconclusive: bool)
 fn build_protocol_request(cfg: &ProbeCfg, protocol: &str) -> (Vec<String>, serde_json::Value) {
     let base = cfg.base.trim_end_matches('/');
     let m = cfg.actual_model.trim().trim_start_matches("models/");
+    // 來源若設了逐協議前綴，就**只**用那一種（使用者已經告訴我們路徑了，
+    // 再猜只是浪費請求）；沒設才用下面的預設形狀候選。
+    let prefix = crate::models::ProtocolPrefixes::parse(&cfg.prefixes).for_protocol(protocol);
+    let configured = !prefix.is_empty();
     match protocol {
         "responses" => (
-            vec![format!("{base}/responses")],
+            vec![format!("{base}{prefix}/responses")],
             serde_json::json!({
                 "model": cfg.actual_model,
                 "input": [{"type": "message", "role": "user",
@@ -151,7 +155,7 @@ fn build_protocol_request(cfg: &ProbeCfg, protocol: &str) -> (Vec<String>, serde
             }),
         ),
         "anthropic" => (
-            vec![format!("{base}/messages")],
+            vec![format!("{base}{prefix}/messages")],
             serde_json::json!({
                 "model": cfg.actual_model,
                 "max_tokens": 4,
@@ -161,18 +165,22 @@ fn build_protocol_request(cfg: &ProbeCfg, protocol: &str) -> (Vec<String>, serde
         // Gemini 原生：**模型名在路徑裡**，內容是 `parts[]`、角色是 `user`/`model`。
         // 候選順序：標準形 → 協議前綴形（opencode-go 的 `/google/v1beta`）→ 補 v1beta。
         "gemini" => (
-            vec![
-                format!("{base}/models/{m}:generateContent"),
-                format!("{base}/google/v1beta/models/{m}:generateContent"),
-                format!("{base}/v1beta/models/{m}:generateContent"),
-            ],
+            if configured {
+                vec![format!("{base}{prefix}/models/{m}:generateContent")]
+            } else {
+                vec![
+                    format!("{base}/models/{m}:generateContent"),
+                    format!("{base}/google/v1beta/models/{m}:generateContent"),
+                    format!("{base}/v1beta/models/{m}:generateContent"),
+                ]
+            },
             serde_json::json!({
                 "contents": [{"role": "user", "parts": [{"text": "hi"}]}],
                 "generationConfig": {"maxOutputTokens": 4},
             }),
         ),
         _ => (
-            vec![format!("{base}/chat/completions")],
+            vec![format!("{base}{prefix}/chat/completions")],
             serde_json::json!({
                 "model": cfg.actual_model,
                 "messages": [{"role": "user", "content": "hi"}],

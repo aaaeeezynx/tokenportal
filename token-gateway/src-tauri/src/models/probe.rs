@@ -41,6 +41,8 @@ pub(crate) struct ProbeCfg {
     /// 上游實際模型名（送出去的 `model` 欄位）
     pub actual_model: String,
     pub format: String,
+    /// 逐協議路徑前綴的原始 JSON（空 = 用預設）。見 `models/prefixes.rs`。
+    pub prefixes: String,
 }
 
 /// 一筆探測的結果。
@@ -79,9 +81,10 @@ pub(crate) fn probe_read_cfg(
     provider_id: i64,
     model_id: i64,
 ) -> Result<ProbeCfg, String> {
-    let (base, key, scheme, format, actual_model) = conn
+    let (base, key, scheme, format, actual_model, prefixes) = conn
         .query_row(
-            "SELECT p.base_url, p.api_key, p.auth_scheme, p.api_format, m.actual_model
+            "SELECT p.base_url, p.api_key, p.auth_scheme, p.api_format, m.actual_model,
+                    p.protocol_prefixes
              FROM provider_models m JOIN providers p ON p.id = m.provider_id
              WHERE m.id = ?1 AND m.provider_id = ?2",
             rusqlite::params![model_id, provider_id],
@@ -92,6 +95,7 @@ pub(crate) fn probe_read_cfg(
                     r.get::<_, String>(2)?,
                     r.get::<_, String>(3)?,
                     r.get::<_, String>(4)?,
+                    r.get::<_, String>(5)?,
                 ))
             },
         )
@@ -120,6 +124,7 @@ pub(crate) fn probe_read_cfg(
         scheme,
         actual_model,
         format,
+        prefixes,
     })
 }
 

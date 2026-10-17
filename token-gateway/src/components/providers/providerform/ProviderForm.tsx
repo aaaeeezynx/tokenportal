@@ -30,6 +30,31 @@ import {
   EMPTY_INPUT,
 } from "../providersTypes";
 
+/** 從 `protocol_prefixes` 的 JSON 取某個協議的前綴（壞掉回空字串）。 */
+function prefixOf(json: string, proto: string): string {
+  try {
+    const o = JSON.parse(json || "{}") as Record<string, unknown>;
+    return typeof o?.[proto] === "string" ? (o[proto] as string) : "";
+  } catch {
+    return "";
+  }
+}
+
+/** 寫回某個協議的前綴；空字串就把鍵刪掉，全空則存空字串（＝沒有前綴）。 */
+function withPrefix(json: string, proto: string, value: string): string {
+  let o: Record<string, string> = {};
+  try {
+    const parsed = JSON.parse(json || "{}") as unknown;
+    if (parsed && typeof parsed === "object") o = parsed as Record<string, string>;
+  } catch {
+    o = {};
+  }
+  const v = value.trim();
+  if (v) o[proto] = v;
+  else delete o[proto];
+  return Object.keys(o).length === 0 ? "" : JSON.stringify(o);
+}
+
 export function ProviderForm(props: {
   initial: Provider | null;
   /** 新建時可從預設開始（只填連線資訊，金鑰與模型仍由使用者處理）。 */
@@ -47,6 +72,7 @@ export function ProviderForm(props: {
           base_url: props.initial.base_url,
           api_key: props.initial.api_key,
           auth_scheme: props.initial.auth_scheme || "bearer",
+          protocol_prefixes: props.initial.protocol_prefixes ?? "",
           models: props.initial.models,
           priority: props.initial.priority,
           enabled: props.initial.enabled,
@@ -59,6 +85,7 @@ export function ProviderForm(props: {
             api_format: props.preset.api_format,
             base_url: props.preset.base_url,
             auth_scheme: props.preset.auth_scheme || "bearer",
+            protocol_prefixes: props.preset.protocol_prefixes ?? "",
           }
         : EMPTY_INPUT,
   );
@@ -226,6 +253,45 @@ export function ProviderForm(props: {
             onChange={(v) => set("api_format", v)}
             options={API_FORMATS_ADVANCED.map((a) => ({ value: a, label: a }))}
           />
+        </details>
+        <details className="mac-frow">
+          <summary className="cursor-pointer text-[11px] text-fg/30">
+            進階：逐協議路徑前綴（一個來源服務多種協議）
+          </summary>
+          <div className="space-y-1.5 pt-1.5">
+            <p className="text-[11px] leading-relaxed text-fg/35">
+              有些上游把協議做在路徑前綴裡（例：OpenCode Go 同一個 base 底下
+              <code className="mx-1">/openai/v1</code>、
+              <code className="mx-1">/anthropic/v1</code>、
+              <code className="mx-1">/google/v1beta</code>）。
+              填了就能用一個來源服務全部四種協議；留空＝用預設。
+            </p>
+            {(
+              [
+                ["openai-chat", "Chat"],
+                ["openai-responses", "Responses"],
+                ["anthropic", "Anthropic"],
+                ["gemini", "Gemini"],
+              ] as const
+            ).map(([proto, label]) => (
+              <div key={proto} className="flex items-center gap-2">
+                <span className="w-24 shrink-0 text-[11px] text-fg/50">{label}</span>
+                <input
+                  className={fieldCls}
+                  placeholder={
+                    proto === "gemini" ? "/google/v1beta" : "/openai/v1"
+                  }
+                  value={prefixOf(form.protocol_prefixes, proto)}
+                  onChange={(e) =>
+                    set(
+                      "protocol_prefixes",
+                      withPrefix(form.protocol_prefixes, proto, e.target.value),
+                    )
+                  }
+                />
+              </div>
+            ))}
+          </div>
         </details>
       </div>
 

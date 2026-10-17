@@ -32,7 +32,23 @@ pub struct Preset {
     /// 一律 `universal`：`app_type` 在本 App 只用於顯示與分類，
     /// 不影響路由（路由是照「哪個來源登記了這個模型」找的）。
     pub app_type: &'static str,
+    /// 逐協議路徑前綴的 JSON（空 = 沒有）。見 `models/prefixes.rs`。
+    pub protocol_prefixes: &'static str,
     pub note: &'static str,
+}
+
+/// 需要「逐協議路徑前綴」的預設（其餘一律沒有）。
+///
+/// 只有把協議做在**路徑前綴**裡的上游才需要它。實測 OpenCode Go 的文件端點是
+/// 同一個 base 底下 `/openai/v1/…`、`/anthropic/v1/…`、`/google/v1beta/…` ——
+/// 用單一 base 加字尾描述不了，所以連前綴一起給，**一個來源就能服務全部四種協議**。
+fn preset_prefixes(id: &str) -> &'static str {
+    match id {
+        "opencode-go" => {
+            r#"{"openai-chat":"/openai/v1","openai-responses":"/openai/v1","anthropic":"/anthropic/v1","gemini":"/google/v1beta"}"#
+        }
+        _ => "",
+    }
 }
 
 /// (id, 名稱, base_url, 協議, 鑑權, 備註)
@@ -90,7 +106,7 @@ const TABLE: [(&str, &str, &str, &str, &str, &str); 38] = [
     ("aihubmix", "AiHubMix", "https://aihubmix.com/v1", "openai-chat", "bearer", ""),
     ("ai302", "302.AI", "https://api.302.ai/v1", "openai-chat", "bearer", ""),
     ("gptsapi", "GPTSAPI", "https://api.gptsapi.net/v1", "openai-chat", "bearer", ""),
-    ("opencode-go", "OpenCode Go（Zen）", "https://opencode.ai/zen/go/v1", "openai-chat", "bearer", "實測 grok/muse 只在 /responses、mimo 只在 chat：網關自動換協議並落庫"),
+    ("opencode-go", "OpenCode Go（Zen）", "https://opencode.ai/inference/go", "auto", "bearer", "依官方文件：同一個 base 底下 /openai/v1、/anthropic/v1、/google/v1beta 各是一種協議；已填好逐協議前綴，四種協議一個來源搞定"),
     // ── 本機（未實測：此機未安裝）──
     ("ollama", "Ollama（本機）", "http://localhost:11434/v1", "openai-chat", "bearer", "本機服務，需先啟動 Ollama；此機未安裝故未實測"),
     ("lmstudio", "LM Studio（本機）", "http://localhost:1234/v1", "openai-chat", "bearer", "本機服務，需先在 LM Studio 開啟伺服器；未實測"),
@@ -108,6 +124,7 @@ pub fn presets_list() -> Vec<Preset> {
             api_format,
             auth_scheme,
             app_type: "universal",
+            protocol_prefixes: preset_prefixes(id),
             note,
         })
         .collect()
@@ -130,12 +147,14 @@ mod tests {
     /// 每一個預設都必須是「填進去就能用」的完整連線資訊。
     #[test]
     fn presets_are_well_formed() {
-        const FORMATS: [&str; 5] = [
+        // `auto` 是 2026-10-10 起的預設（逐模型偵測協議）
+        const FORMATS: [&str; 6] = [
             "openai-chat",
             "openai-responses",
             "mixed",
             "anthropic",
             "gemini",
+            "auto",
         ];
         const SCHEMES: [&str; 3] = ["bearer", "goog-key", "anthropic"];
         for (id, name, base_url, api_format, auth_scheme, _note) in TABLE {
@@ -162,6 +181,15 @@ mod tests {
         assert!(json.contains("\"openai\""));
         assert!(json.contains("\"openai-chat\""));
         // 至少要有使用者實際在用的那一個（回歸：oc-go 是本案的起點）
-        assert!(list.iter().any(|p| p.base_url.contains("opencode.ai/zen/go")));
+        // 2026-10-11：改用官方文件記載的 base（同一個 base 底下四種協議各有前綴）
+        assert!(list.iter().any(|p| p.base_url.contains("opencode.ai/inference/go")));
+        // 只有它需要逐協議前綴
+        assert!(list
+            .iter()
+            .any(|p| p.id == "opencode-go" && !p.protocol_prefixes.is_empty()));
+        assert!(list
+            .iter()
+            .filter(|p| p.id != "opencode-go")
+            .all(|p| p.protocol_prefixes.is_empty()));
     }
 }

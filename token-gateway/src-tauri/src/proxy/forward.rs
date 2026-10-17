@@ -15,6 +15,8 @@ pub(super) struct ReroutedProvider {
     pub(super) format: String,
     /// 逐模型協議（provider_models.protocol）；空 = 未偵測
     pub(super) protocol: String,
+    /// 逐協議路徑前綴的原始 JSON（空 = 用預設）
+    pub(super) prefixes: String,
 }
 /// 組裝上游 URL 與轉發標頭，回傳 `(url, headers)`。
 ///
@@ -35,19 +37,33 @@ pub(super) fn build_upstream_target(
     // 而路徑長相取決於翻譯結果（串流與否），所以由翻譯器決定。
     path_override: Option<&str>,
 ) -> (String, Vec<(String, String)>) {
+    let base = authed.provider_base_url.trim_end_matches('/');
+    // 逐協議路徑前綴（見 `models/prefixes.rs`）。
+    //
+    // 有些上游把協議做在**路徑前綴**裡（實測 OpenCode Go：同一個 base 底下
+    // `/openai/v1/…`、`/anthropic/v1/…`、`/google/v1beta/…`）。前綴接在 base 之後、
+    // 協議字尾之前；空字串 = 沒有前綴（既有行為，向後相容）。
+    let prefixes = crate::models::ProtocolPrefixes::parse(&authed.provider_protocol_prefixes);
+    let prefix = prefixes.for_protocol(target_fmt.as_str());
     let mut url = if let Some(p) = path_override {
-        format!("{}{}", authed.provider_base_url.trim_end_matches('/'), p)
+        format!("{base}{prefix}{p}")
     } else if translated {
         // 翻譯路徑的端點由**目標協議**決定，不能寫死 /chat/completions ——
         // Anthropic 上游（例如 opencode-go 的 /messages）是另一個路徑。
-        let base = authed.provider_base_url.trim_end_matches('/');
         if matches!(target_fmt, TargetFmt::Anthropic) {
-            format!("{base}/messages")
+            format!("{base}{prefix}/messages")
         } else {
-            format!("{base}/chat/completions")
+            format!("{base}{prefix}/chat/completions")
         }
-    } else {
+    } else if prefix.is_empty() {
         join_upstream(&authed.provider_base_url, parts.uri.path())
+    } else {
+        // 直通 ＋ 有前綴：{base}{prefix}{客戶端路徑去掉版本段}。
+        //
+        // **必須去掉版本段**：前綴本身就帶著版本（`/openai/v1`、`/google/v1beta`），
+        // 而客戶端路徑也帶（`/v1/chat/completions`）—— 不去掉就會變成
+        // `/openai/v1/v1/chat/completions`。
+        format!("{base}{prefix}{}", strip_leading_version(parts.uri.path()))
     };
     // 覆寫路徑自己就帶查詢字串（`?alt=sse`），不能再接客戶端的 query
     if path_override.is_none() {
@@ -149,7 +165,8 @@ pub(super) fn resolve_model_provider(
     exclude_pid: i64,
 ) -> Option<ReroutedProvider> {
     conn.query_row(
-        "SELECT p.id, p.base_url, p.api_key, p.auth_scheme, p.api_format, m.protocol
+        "SELECT p.id, p.base_url, p.api_key, p.auth_scheme, p.api_format, m.protocol,
+                p.protocol_prefixes
          FROM provider_models m JOIN providers p ON p.id = m.provider_id
          WHERE m.enabled = 1 AND p.enabled = 1 AND p.id != ?2
            AND (lower(m.display_name) = lower(?1) OR lower(m.actual_model) = lower(?1))
@@ -163,6 +180,7 @@ pub(super) fn resolve_model_provider(
                 scheme: r.get(3)?,
                 format: r.get(4)?,
                 protocol: r.get(5)?,
+                prefixes: r.get(6)?,
             })
         },
     )
@@ -180,7 +198,8 @@ pub(super) fn resolve_model_providers(
     exclude_pid: i64,
 ) -> Vec<ReroutedProvider> {
     let mut stmt = match conn.prepare(
-        "SELECT p.id, p.base_url, p.api_key, p.auth_scheme, p.api_format, m.protocol
+        "SELECT p.id, p.base_url, p.api_key, p.auth_scheme, p.api_format, m.protocol,
+                p.protocol_prefixes
          FROM provider_models m JOIN providers p ON p.id = m.provider_id
          WHERE m.enabled = 1 AND p.enabled = 1 AND p.id != ?2
            AND (lower(m.display_name) = lower(?1) OR lower(m.actual_model) = lower(?1))
@@ -198,6 +217,7 @@ pub(super) fn resolve_model_providers(
             scheme: r.get(3)?,
             format: r.get(4)?,
             protocol: r.get(5)?,
+            prefixes: r.get(6)?,
         })
     });
     match rows {
@@ -337,6 +357,29 @@ pub(super) fn translate_forward_body(
         path_suffix: translated_path,
     })
 }
+/// 去掉路徑開頭的版本段（`/v1`、`/v1beta`、`/v2` …）。
+///
+/// 只在「有設定逐協議前綴」的直通路徑用到：前綴本身已經帶版本，客戶端路徑也帶，
+/// 不去掉就會拼出 `/openai/v1/v1/chat/completions`。
+pub(super) fn strip_leading_version(path: &str) -> String {
+    let mut segs = path.split('/').filter(|s| !s.is_empty());
+    let first = segs.next().unwrap_or("");
+    let is_version = first.len() >= 2
+        && first.len() <= 8
+        && first.starts_with(['v', 'V'])
+        && first[1..].chars().all(|c| c.is_ascii_alphanumeric());
+    let rest: Vec<&str> = if is_version {
+        segs.collect()
+    } else {
+        std::iter::once(first).chain(segs).collect()
+    };
+    if rest.is_empty() {
+        "/".to_string()
+    } else {
+        format!("/{}", rest.join("/"))
+    }
+}
+
 /// 依序套用所有「上游已知拒收」的剝離：
 /// ① 該渠道學到的拒收欄位（SQLite 持久化記憶，見 §3 B2）
 /// ② OpenAI 專屬推理簽章 `encrypted_content`（§3 B1）—— **有條件**，見下

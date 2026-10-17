@@ -44,6 +44,7 @@ fn live_probe_finds_gemini_through_the_protocol_prefixed_path() {
         scheme: "bearer".into(),
         actual_model: "gemini-4-argon-contributor".into(),
         format: "gemini".into(),
+        prefixes: String::new(),
     };
     let rep = probe_protocol_http(&cfg);
     println!(

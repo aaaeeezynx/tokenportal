@@ -52,6 +52,7 @@ export const EMPTY_INPUT: ProviderInput = {
   base_url: "",
   api_key: "",
   auth_scheme: "bearer",
+  protocol_prefixes: "",
   models: [],
   priority: 0,
   enabled: true,

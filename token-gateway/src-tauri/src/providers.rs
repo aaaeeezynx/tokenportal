@@ -19,6 +19,8 @@ pub struct Provider {
     pub api_key: String,
     /// 上游鑑權方式：bearer（默認）| goog-key（Google x-goog-api-key）。
     pub auth_scheme: String,
+    /// 逐協議路徑前綴的原始 JSON（空 = 用預設）。見 `models/prefixes.rs`。
+    pub protocol_prefixes: String,
     pub models: Vec<String>,
     pub priority: i64,
     pub enabled: bool,
@@ -32,9 +34,25 @@ pub struct ProviderInput {
     pub base_url: String,
     pub api_key: String,
     pub auth_scheme: String,
+    /// 逐協議路徑前綴的原始 JSON（空 = 用預設）。見 `models/prefixes.rs`。
+    pub protocol_prefixes: String,
     pub models: Vec<String>,
     pub priority: i64,
     pub enabled: bool,
+}
+
+/// 正規化逐協議前綴的 JSON：空字串保持空，其餘原樣（解析失敗就當沒有）。
+///
+/// **刻意不在這裡驗證內容** —— 前綴填錯最壞就是打不到上游（會回 404），
+/// 不該讓它變成「存不進去」。解析在 `models::ProtocolPrefixes::parse`，
+/// 壞掉時回預設（沒有前綴），請求照常走既有路徑。
+fn norm_prefixes(raw: &str) -> String {
+    let t = raw.trim();
+    if t.is_empty() {
+        return String::new();
+    }
+    // 能解析就存正規化後的；不能解析也原樣存（讓使用者在 UI 看到自己填了什麼）
+    t.to_string()
 }
 
 fn norm_scheme(s: &str) -> String {
@@ -55,13 +73,14 @@ fn row_to_provider(row: &Row) -> rusqlite::Result<Provider> {
         base_url: row.get(4)?,
         api_key: row.get(5)?,
         auth_scheme: row.get(9)?,
+        protocol_prefixes: row.get(10)?,
         models,
         priority: row.get(7)?,
         enabled: row.get::<_, i64>(8)? != 0,
     })
 }
 
-const SELECT: &str = "SELECT id, name, app_type, api_format, base_url, api_key, models_json, priority, enabled, auth_scheme FROM providers ORDER BY priority ASC, id ASC";
+const SELECT: &str = "SELECT id, name, app_type, api_format, base_url, api_key, models_json, priority, enabled, auth_scheme, protocol_prefixes FROM providers ORDER BY priority ASC, id ASC";
 
 fn list_providers(conn: &Connection) -> Result<Vec<Provider>, String> {
     let mut stmt = conn.prepare(SELECT).map_err(|e| e.to_string())?;
@@ -105,8 +124,8 @@ pub(crate) fn insert_provider(
         )
         .map_err(|e| e.to_string())?;
     conn.execute(
-        "INSERT INTO providers (name, app_type, api_format, base_url, api_key, auth_scheme, models_json, priority, enabled, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
+        "INSERT INTO providers (name, app_type, api_format, base_url, api_key, auth_scheme, models_json, protocol_prefixes, priority, enabled, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![
             name,
             input.app_type,
@@ -115,8 +134,10 @@ pub(crate) fn insert_provider(
             input.api_key,
             norm_scheme(&input.auth_scheme),
             serde_json::to_string(&input.models).unwrap_or_else(|_| "[]".to_string()),
+            norm_prefixes(&input.protocol_prefixes),
             next_priority,
             if input.enabled { 1 } else { 0 },
+            now,
             now,
         ],
     )
@@ -148,7 +169,7 @@ pub fn provider_update(
     let n = conn
         .execute(
             "UPDATE providers SET name=?1, app_type=?2, api_format=?3, base_url=?4, api_key=?5, auth_scheme=?6,
-             models_json=?7, priority=?8, enabled=?9, updated_at=?10 WHERE id=?11",
+             models_json=?7, priority=?8, enabled=?9, updated_at=?10, protocol_prefixes=?11 WHERE id=?12",
             params![
                 name,
                 input.app_type,
@@ -160,6 +181,7 @@ pub fn provider_update(
                 input.priority,
                 if input.enabled { 1 } else { 0 },
                 now_ms(),
+                norm_prefixes(&input.protocol_prefixes),
                 id,
             ],
         )
@@ -261,6 +283,7 @@ mod tests {
             base_url: "https://example.com/v1".into(),
             api_key: "sk-test".into(),
             auth_scheme: "bearer".into(),
+            protocol_prefixes: String::new(),
             models: vec![],
             priority: 0,
             enabled: true,
