@@ -137,6 +137,8 @@ pub fn run() {
             commands::model_reasoning_facts,
             // 協議探測（見 models/protocol_probe.rs）
             commands::model_probe_protocol,
+            // 自動偵測連線佈局（base ＋ 逐協議前綴）
+            commands::provider_detect_layout,
             commands::model_add,
             commands::model_update,
             commands::model_delete,

@@ -23,37 +23,9 @@ import {
   ModelPanel,
 } from "../ModelCatalog";
 import {
-  API_FORMATS,
-  API_FORMATS_ADVANCED,
   APP_TYPES,
-  AUTH_SCHEMES,
   EMPTY_INPUT,
 } from "../providersTypes";
-
-/** 從 `protocol_prefixes` 的 JSON 取某個協議的前綴（壞掉回空字串）。 */
-function prefixOf(json: string, proto: string): string {
-  try {
-    const o = JSON.parse(json || "{}") as Record<string, unknown>;
-    return typeof o?.[proto] === "string" ? (o[proto] as string) : "";
-  } catch {
-    return "";
-  }
-}
-
-/** 寫回某個協議的前綴；空字串就把鍵刪掉，全空則存空字串（＝沒有前綴）。 */
-function withPrefix(json: string, proto: string, value: string): string {
-  let o: Record<string, string> = {};
-  try {
-    const parsed = JSON.parse(json || "{}") as unknown;
-    if (parsed && typeof parsed === "object") o = parsed as Record<string, string>;
-  } catch {
-    o = {};
-  }
-  const v = value.trim();
-  if (v) o[proto] = v;
-  else delete o[proto];
-  return Object.keys(o).length === 0 ? "" : JSON.stringify(o);
-}
 
 export function ProviderForm(props: {
   initial: Provider | null;
@@ -99,6 +71,23 @@ export function ProviderForm(props: {
   const [created, setCreated] = useState<Provider | null>(null);
   const eff = created ?? props.initial;
 
+  const [detectMsg, setDetectMsg] = useState("");
+  /**
+   * 自動偵測連線佈局（base ＋ 逐協議前綴）。
+   *
+   * 使用者只要填地址與 Key —— 接口格式、四條前綴、鑑權方式都由這裡決定。
+   * 失敗時**完全不改動設定**（後端保證），所以按了不會弄壞能用的來源。
+   */
+  const detect = useMutation({
+    mutationFn: () => api.providerDetectLayout(eff!.id),
+    onSuccess: async (rep) => {
+      setDetectMsg(rep.message);
+      if (rep.base_changed) set("base_url", rep.base_url);
+      void qc.invalidateQueries({ queryKey: ["providers"] });
+    },
+    onError: (e) => setDetectMsg(String(e)),
+  });
+
   const save = useMutation({
     mutationFn: () => {
       const input: ProviderInput = {
@@ -135,6 +124,16 @@ export function ProviderForm(props: {
       if (eff) {
         props.onDone();
       } else {
+        // 新來源：**存檔後自動偵測一次連線佈局**（使用者只填了地址與 Key，
+        // 接口格式／前綴／鑑權都交給後端判斷）。失敗只顯示訊息，不改設定。
+        try {
+          const rep = await api.providerDetectLayout(p.id);
+          setDetectMsg(rep.message);
+          if (rep.base_changed) set("base_url", rep.base_url);
+          void qc.invalidateQueries({ queryKey: ["providers"] });
+        } catch (e) {
+          setDetectMsg(String(e));
+        }
         setCreated(p);
         setDraftModels([]);
       }
@@ -224,75 +223,6 @@ export function ProviderForm(props: {
             options={APP_TYPES.map((a) => ({ value: a, label: a }))}
           />
         </div>
-        <div className="mac-frow">
-          <span className="mac-cap">
-            接口格式
-            <span className="ml-1 font-normal text-fg/25">
-              auto = 逐模型偵測（同一個訂閱可混用協議）
-            </span>
-          </span>
-          <PopSelect
-            value={form.api_format}
-            onChange={(v) => set("api_format", v)}
-            options={[
-              ...API_FORMATS.map((o) => ({ value: o.id, label: o.label })),
-              // 現有的明確值不在簡化清單裡時，補一項讓它顯示得出來（不靜默改掉
-              // 使用者的設定）；要改回 auto 就從上面那兩項挑。
-              ...(API_FORMATS.some((o) => o.id === form.api_format)
-                ? []
-                : [{ value: form.api_format, label: `${form.api_format}（目前值）` }]),
-            ]}
-          />
-        </div>
-        <details className="mac-frow">
-          <summary className="cursor-pointer text-[11px] text-fg/30">
-            進階：明確指定來源協議（不看逐模型偵測）
-          </summary>
-          <PopSelect
-            value={form.api_format}
-            onChange={(v) => set("api_format", v)}
-            options={API_FORMATS_ADVANCED.map((a) => ({ value: a, label: a }))}
-          />
-        </details>
-        <details className="mac-frow">
-          <summary className="cursor-pointer text-[11px] text-fg/30">
-            進階：逐協議路徑前綴（一個來源服務多種協議）
-          </summary>
-          <div className="space-y-1.5 pt-1.5">
-            <p className="text-[11px] leading-relaxed text-fg/35">
-              有些上游把協議做在路徑前綴裡（例：OpenCode Go 同一個 base 底下
-              <code className="mx-1">/openai/v1</code>、
-              <code className="mx-1">/anthropic/v1</code>、
-              <code className="mx-1">/google/v1beta</code>）。
-              填了就能用一個來源服務全部四種協議；留空＝用預設。
-            </p>
-            {(
-              [
-                ["openai-chat", "Chat"],
-                ["openai-responses", "Responses"],
-                ["anthropic", "Anthropic"],
-                ["gemini", "Gemini"],
-              ] as const
-            ).map(([proto, label]) => (
-              <div key={proto} className="flex items-center gap-2">
-                <span className="w-24 shrink-0 text-[11px] text-fg/50">{label}</span>
-                <input
-                  className={fieldCls}
-                  placeholder={
-                    proto === "gemini" ? "/google/v1beta" : "/openai/v1"
-                  }
-                  value={prefixOf(form.protocol_prefixes, proto)}
-                  onChange={(e) =>
-                    set(
-                      "protocol_prefixes",
-                      withPrefix(form.protocol_prefixes, proto, e.target.value),
-                    )
-                  }
-                />
-              </div>
-            ))}
-          </div>
-        </details>
       </div>
 
       <div className="form-section">
@@ -308,16 +238,22 @@ export function ProviderForm(props: {
             onChange={(e) => set("base_url", e.target.value)}
           />
         </div>
+
         <div className="mac-frow">
-          <span className="mac-cap">鑑權方式</span>
-          <PopSelect
-            value={form.auth_scheme}
-            onChange={(v) => set("auth_scheme", v)}
-            options={AUTH_SCHEMES.map((a) => ({
-              value: a.id,
-              label: a.label,
-            }))}
-          />
+          <span className="mac-cap">連線設定</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              className="btn-ghost px-3 py-1.5 text-xs disabled:opacity-40"
+              disabled={!eff || detect.isPending}
+              title="自動判斷接口格式與逐協議路徑前綴（會對上游發幾筆探測請求）"
+              onClick={() => detect.mutate()}
+            >
+              {detect.isPending ? "偵測中…" : eff ? "自動偵測" : "存檔後自動偵測"}
+            </button>
+            <span className="text-[11px] leading-relaxed text-fg/40">
+              {detectMsg || "接口格式與路徑前綴都由這裡自動決定"}
+            </span>
+          </div>
         </div>
         <div className="mac-frow">
           <span className="mac-cap">API Key</span>

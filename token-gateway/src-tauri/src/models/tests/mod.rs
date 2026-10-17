@@ -9,6 +9,7 @@
 use super::*;
 
 mod catalog;
+mod layout;
 mod live_protocol;
 mod probe;
 mod protocol_memory;

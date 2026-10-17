@@ -98,6 +98,36 @@ pub async fn model_probe_protocol(
     .map_err(|e| e.to_string())?
 }
 
+/// 自動偵測這個來源的**連線佈局**（base ＋ 逐協議路徑前綴），並寫回設定。
+///
+/// 使用者只需要填「名稱／上游地址／API Key」——接口格式與四條前綴由這裡決定。
+/// **會對上游發幾筆探測請求**（已知主機 4 筆、未知主機最多 12 筆）。
+///
+/// 安全性：只有「至少一個協議的路由存在」才寫入；全都不可達就**什麼都不動**，
+/// 不會弄壞一個本來能用的來源。base 也只在**驗證過更權威的位址可達更多協議**
+/// 之後才切換。
+#[tauri::command]
+pub async fn provider_detect_layout(
+    app: AppHandle,
+    provider_id: i64,
+) -> Result<crate::models::LayoutReport, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db = app.state::<DbState>();
+        let cfg = {
+            let conn = db.conn.lock().map_err(|e| e.to_string())?;
+            crate::models::layout_read_cfg(&conn, provider_id)?
+        };
+        let report = crate::models::detect_layout_http(&cfg);
+        {
+            let conn = db.conn.lock().map_err(|e| e.to_string())?;
+            crate::models::layout_write(&conn, provider_id, &report)?;
+        }
+        Ok(report)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// 這個模型目前的思考強度記憶（UI 顯示「上次偵測」用）。
 #[tauri::command]
 pub fn model_reasoning_facts(

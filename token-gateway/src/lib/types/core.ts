@@ -40,6 +40,32 @@ export interface Provider {
   enabled: boolean;
 }
 
+/** 一個協議的佈局探測結果（見後端 `models/layout.rs`）。 */
+export interface ProtocolRoute {
+  protocol: string;
+  /** 採用的路徑前綴（空 = 沒有前綴） */
+  prefix: string;
+  /** 最後一次嘗試的 HTTP 狀態（0 = 連線失敗） */
+  status: number;
+  /** 路由存在嗎（**非 404** 就算存在，與模型支不支援無關） */
+  route_exists: boolean;
+}
+
+/** 連線佈局偵測報告。 */
+export interface LayoutReport {
+  /** 最終採用的 base（可能被換成官方記載的那個） */
+  base_url: string;
+  /** base 是否被改動 */
+  base_changed: boolean;
+  /** 可直接存進設定的前綴 JSON（空 = 不需要前綴） */
+  prefixes: string;
+  routes: ProtocolRoute[];
+  /** 有路由可達的協議 */
+  reachable: string[];
+  /** 給人看的一句話 */
+  message: string;
+}
+
 export interface ProviderInput {
   name: string;
   app_type: string;

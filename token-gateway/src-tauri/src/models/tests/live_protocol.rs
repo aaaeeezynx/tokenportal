@@ -9,6 +9,80 @@
 
 use super::*;
 
+/// ★ 真機：**對現有來源按一次「自動偵測」，看它能不能自己升級佈局**。
+///
+/// 使用者的 `opencode-go` 來源原本是舊佈局（`/zen/go/v1`），只有三種協議、
+/// 沒有 Gemini 路由。偵測會：
+///
+/// 1. 先量舊 base → 應該只有 3 條路由
+/// 2. 再量官方記載的 base → 應該有 4 條
+/// 3. 4 > 3 → **切換**（只有在驗證過之後才換）
+/// 4. 寫入前綴、把接口格式設成 `auto`
+///
+/// **會改動真實資料庫的那一筆來源**（那正是 UI 按鈕做的事）。
+///
+/// `cargo test --offline --lib -- --ignored live_detect_layout --nocapture`
+#[test]
+#[ignore = "live: 需真實來源與金鑰，且會改寫該來源的 base／前綴（等同按一次 UI 按鈕）"]
+fn live_detect_layout_upgrades_the_existing_opencode_source() {
+    let db = dirs::data_dir()
+        .expect("data_dir")
+        .join("com.tokencounter.gateway")
+        .join("app.db");
+    let conn = crate::db::open_and_ensure(&db).expect("打開真實資料庫");
+
+    let pid: i64 = match conn.query_row(
+        "SELECT id FROM providers WHERE base_url LIKE '%opencode.ai%' ORDER BY id LIMIT 1",
+        [],
+        |r| r.get(0),
+    ) {
+        Ok(v) => v,
+        Err(_) => {
+            println!("（跳過：找不到 opencode 來源）");
+            return;
+        }
+    };
+    let before: (String, String, String) = conn
+        .query_row(
+            "SELECT base_url, api_format, protocol_prefixes FROM providers WHERE id=?1",
+            [pid],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    println!(
+        "偵測前：base={} fmt={} prefixes={:?}",
+        before.0, before.1, before.2
+    );
+
+    let cfg = layout_read_cfg(&conn, pid).expect("讀取偵測設定");
+    let rep = detect_layout_http(&cfg);
+    println!("{}", rep.message);
+    for r in &rep.routes {
+        println!(
+            "    {:<18} prefix={:<14} HTTP {} route={}",
+            r.protocol, r.prefix, r.status, r.route_exists
+        );
+    }
+    assert_eq!(rep.reachable.len(), 4, "官方 base 應四種協議都通：{rep:?}");
+    assert!(rep.base_changed, "舊佈局只有三種協議，應該會升級 base");
+
+    layout_write(&conn, pid, &rep).expect("寫入偵測結果");
+    let after: (String, String, String) = conn
+        .query_row(
+            "SELECT base_url, api_format, protocol_prefixes FROM providers WHERE id=?1",
+            [pid],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    println!(
+        "偵測後：base={} fmt={} prefixes={:?}",
+        after.0, after.1, after.2
+    );
+    assert_eq!(after.0, "https://opencode.ai/inference/go");
+    assert_eq!(after.1, "auto");
+    assert!(after.2.contains("/google/v1beta"), "{}", after.2);
+}
+
 /// ★ 真機：**探測器自己要能透過「多路徑形狀」找到 Gemini**。
 ///
 /// 2026-10-11 的誤判：opencode-go 的 `gemini-4-argon-contributor` 在站上可用，

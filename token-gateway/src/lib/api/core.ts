@@ -5,6 +5,7 @@ import type {
   CheckResult,
   DbStatus,
   ImportReport,
+  LayoutReport,
   Preset,
   Provider,
   ProviderInput,
@@ -51,6 +52,9 @@ export const coreApi = {
     invoke("provider_update", { id, input }),
   providerDelete: (id: number): Promise<void> =>
     invoke("provider_delete", { id }),
+  /** 自動偵測這個來源的連線佈局（base ＋ 逐協議前綴）並寫回。 */
+  providerDetectLayout: (providerId: number): Promise<LayoutReport> =>
+    invoke("provider_detect_layout", { providerId }),
   providerReorder: (ids: number[]): Promise<void> =>
     invoke("provider_reorder", { ids }),
   /** 複製來源（連模型、每模型價格、訂閱時段一起），回傳新來源的 id。 */
