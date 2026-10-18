@@ -157,7 +157,12 @@ pub(crate) fn chat_to_gemini(
                                 .and_then(|a| a.as_str())
                                 .and_then(|t| serde_json::from_str(t).ok())
                                 .unwrap_or_else(|| json!({}));
+                            // 簽章要放在 `functionCall` 的**同層**；沒有真實的
+                            // 就送官方哨兵 —— 留空一定 400。
+                            let sig = super::signature_from_id(&s(&call["id"]))
+                                .unwrap_or_else(|| super::SKIP_SIGNATURE.to_string());
                             parts.push(json!({
+                                "thoughtSignature": sig,
                                 "functionCall": {"name": s(&f["name"]), "args": args}
                             }));
                         }

@@ -317,3 +317,84 @@ fn function_response_never_leaves_the_name_empty() {
     let name = &out["contents"][0]["parts"][0]["functionResponse"]["name"];
     assert!(!name.as_str().unwrap_or("").is_empty(), "不可為空：{out}");
 }
+
+/// ★★ 迴歸（2026-10-12 真機，Codex 第二輪）：**`thoughtSignature` 必須往返**。
+///
+/// Gemini 要求把模型回傳的簽章在下一輪原樣送回，否則：
+///
+///     [400] Function call is missing a thought_signature in functionCall parts.
+///
+/// 而**串流端點對同一個錯誤回空 body** —— 這就是「上游返回錯誤（空回包）」
+/// 查了半天的原因。
+///
+/// 這裡驗證完整往返：回應側夾進 id、請求側再取出來。
+#[test]
+fn thought_signature_round_trips_through_the_tool_call_id() {
+    let signature = "ElkKVwFpFH0T7D2suEmwRF+Snrl2tRUlxiDTs6WXk+Oe9klVrlcohVRgKZYa==";
+    let resp = json!({
+        "candidates": [{"content": {"role": "model", "parts": [
+            {"thoughtSignature": signature,
+             "functionCall": {"id": "call_4312684", "name": "shell",
+                              "args": {"command": ["ls"]}}}
+        ]}, "finishReason": "STOP"}],
+        "usageMetadata": {"promptTokenCount": 1, "candidatesTokenCount": 1}
+    });
+    let resp = gemini_to_chat_resp(&resp, "g");
+    let msg = &resp["choices"][0]["message"];
+    let call = &msg["tool_calls"][0];
+    assert_eq!(call["function"]["name"], "shell");
+    let id = call["id"].as_str().unwrap();
+    assert!(id.starts_with("call_4312684"), "應保留上游的 id：{id}");
+    assert!(id.contains(signature), "簽章應夾在 id 裡：{id}");
+
+    // 把這個 id 原樣放回歷史 → 請求側要還原成真實簽章
+    let req = json!({
+        "model": "m",
+        "messages": [
+            {"role": "user", "content": "run ls"},
+            {"role": "assistant", "content": null,
+             "tool_calls": [{"id": id, "type": "function",
+                             "function": {"name": "shell", "arguments": "{\"command\":[\"ls\"]}"}}]},
+            {"role": "tool", "tool_call_id": id, "content": "a.txt"}
+        ]
+    });
+    let (out, _) = chat_to_gemini(&req, "g", &[]);
+    let part = &out["contents"][1]["parts"][0];
+    assert_eq!(part["thoughtSignature"], signature, "{part}");
+    assert_eq!(part["functionCall"]["name"], "shell");
+}
+
+/// 沒有簽章可用時（歷史不是 Gemini 回的、或 id 被客戶端改寫）→ 送哨兵。
+///
+/// 留空一定 400；隨便塞 base64 會得到 `Corrupted thought signature`。
+/// 實測只有「真實簽章」與這個哨兵兩種會過。
+#[test]
+fn missing_signature_falls_back_to_the_official_sentinel() {
+    let req = json!({
+        "model": "m",
+        "messages": [
+            {"role": "assistant", "content": null,
+             "tool_calls": [{"id": "call_made_by_someone_else", "type": "function",
+                             "function": {"name": "shell", "arguments": "{}"}}]}
+        ]
+    });
+    let (out, _) = chat_to_gemini(&req, "g", &[]);
+    assert_eq!(
+        out["contents"][0]["parts"][0]["thoughtSignature"],
+        "skip_thought_signature_validator"
+    );
+}
+
+/// 純文字回覆不夾簽章（id 保持原樣），避免把無關的東西塞進 id。
+#[test]
+fn text_only_responses_do_not_carry_a_signature() {
+    let resp = json!({
+        "candidates": [{"content": {"role": "model",
+                                    "parts": [{"text": "hello"}]},
+                        "finishReason": "STOP"}]
+    });
+    let resp = gemini_to_chat_resp(&resp, "g");
+    let msg = &resp["choices"][0]["message"];
+    assert_eq!(msg["content"], "hello");
+    assert!(msg.get("tool_calls").is_none());
+}

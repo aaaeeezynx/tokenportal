@@ -47,8 +47,23 @@ fn read_candidate(resp: &Value) -> (String, Vec<Value>, Option<String>, (i64, i6
                     text.push_str(t);
                 }
                 if let Some(fc) = p.get("functionCall") {
+                    // `thoughtSignature` 必須在下一輪原樣送回（見
+                    // `translate/mod.rs` 的 `SIGNATURE_SEP` 說明），
+                    // 這裡把它夾進 id 一起帶出去。
+                    let base = {
+                        let gid = s(&fc["id"]);
+                        if gid.is_empty() {
+                            format!("call_{}", calls.len())
+                        } else {
+                            gid
+                        }
+                    };
+                    let id = match p.get("thoughtSignature").and_then(|t| t.as_str()) {
+                        Some(sig) if !sig.is_empty() => super::id_with_signature(&base, sig),
+                        _ => base,
+                    };
                     calls.push(json!({
-                        "id": format!("call_{}", calls.len()),
+                        "id": id,
                         "type": "function",
                         "function": {
                             "name": s(&fc["name"]),

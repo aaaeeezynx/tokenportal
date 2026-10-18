@@ -83,6 +83,54 @@ const EMPTY_MESSAGE_PLACEHOLDER: &str = "[empty message — placeholder filled b
 ///
 /// 放在共用層而不是各自的翻譯器裡，是因為兩邊**必須**一致 ——
 /// 分成兩份遲早會漂移（而且會造成同名匯出衝突）。
+/// Gemini 的 `thoughtSignature` 在本網關裡的攜帶方式。
+///
+/// 為什麼要繞這一圈：Gemini 要求把模型回傳的 `thoughtSignature` 在**下一輪
+/// 原樣送回**（放在 `parts[].functionCall` 的**同層**）。缺了會直接 400：
+///
+/// ```text
+/// [400] Function call is missing a thought_signature in functionCall parts.
+/// ```
+///
+/// 而串流端點更惡劣 —— 同一個錯誤回的是**空 body**，所以查了半天只看到
+/// 「上游返回錯誤（空回包）」。
+///
+/// Chat 與 Responses 都沒有能放這個欄位的型別，於是把它**夾在 tool-call id**
+/// 裡往返（`base64` 的字母表不含 `~`，不會撞）：
+///
+/// ```text
+/// id = call_4312684~ElkKVwFpFH0T7D2suEmwRF+Snrl2tRUlxiDTs6WXk+Oe9klVrlcohVRgKZYa==
+/// ```
+///
+/// 客戶端只是把 id 原樣回傳，不必知道裡面有什麼。若 id 被客戶端改寫、
+/// 或上一輪不是 Gemini 回的，就退回 [`SKIP_SIGNATURE`] —— 實測可行。
+const SIGNATURE_SEP: char = '~';
+
+/// Gemini 官方的「略過簽章驗證」哨兵。
+///
+/// 沒有真實簽章時必須送這個：**留空一定 400**，而隨便塞 base64 會得到
+/// `Corrupted thought signature`。實測只有這個字串與真實簽章兩種會過。
+pub(crate) const SKIP_SIGNATURE: &str = "skip_thought_signature_validator";
+
+/// 從 tool-call id 取出夾帶的簽章。
+pub(crate) fn signature_from_id(id: &str) -> Option<String> {
+    let (_, sig) = id.rsplit_once(SIGNATURE_SEP)?;
+    if sig.is_empty() {
+        None
+    } else {
+        Some(sig.to_string())
+    }
+}
+
+/// 把簽章夾進 tool-call id。
+pub(crate) fn id_with_signature(base: &str, signature: &str) -> String {
+    if signature.is_empty() {
+        base.to_string()
+    } else {
+        format!("{base}{SIGNATURE_SEP}{signature}")
+    }
+}
+
 pub(crate) fn thinking_budget(effort: &str) -> Option<i64> {
     match effort.trim().to_ascii_lowercase().as_str() {
         "minimal" => Some(1_024),
