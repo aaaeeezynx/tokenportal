@@ -64,8 +64,6 @@ export function saveLang(l: Lang) {
 /** 字典：key → 繁中（source）／英文。 */
 import { DICT } from "./i18nDict";
 
-export type Dict = Record<string, [string, string]>;
-
 type Ctx = {
   lang: Lang;
   /** 取字串；`{name}` 形式的佔位會被替換。 */
@@ -129,6 +127,3 @@ export function I18nProvider(props: {
 export function useI18n(): Ctx {
   return useContext(LangCtx);
 }
-
-/** 字典 key 數（給設定頁與文件報覆蓋率用）。 */
-export const DICT_SIZE = Object.keys(DICT).length;

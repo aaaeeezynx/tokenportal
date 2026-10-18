@@ -17,10 +17,8 @@ export const DICT: Record<string, [string, string]> = {
   "nav.settings": ["設定", "Settings"],
 
   // ── 頂列 ──
-  "top.gateway": ["網關", "Gateway"],
   "top.stop": ["停止", "Stop"],
   "top.start": ["啟動", "Start"],
-  "top.version": ["v2 · Tauri", "v2 · Tauri"],
 
   // ── 設定：網關 ──
   "settings.gateway.title": ["網關", "Gateway"],
@@ -129,9 +127,6 @@ export const DICT: Record<string, [string, string]> = {
   "settings.export.range.30d": ["最近 30 天", "Last 30 days"],
 
   // ── 共用 ──
-  "common.cancel": ["取消", "Cancel"],
-  "common.confirm": ["確定", "Confirm"],
-  "common.close": ["關閉", "Close"],
   "common.loading": ["載入中…", "Loading…"],
   "common.readFailed": ["讀取失敗", "Read failed"],
 };

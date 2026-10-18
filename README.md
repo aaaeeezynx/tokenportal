@@ -230,24 +230,34 @@ macOS 27 風格的介面：Liquid Glass、深／淺／跟隨系統三種主題�
 
 ## 下載 · Download
 
-### 最新版本 · v0.1.2
+### 最新版本 · v0.1.3
 
 **[⬇ 前往 Releases 頁下載](https://github.com/aaaeeezynx/tokentoll/releases/latest)**
 
 | 檔案 | 大小 | 說明 |
 |---|---|---|
-| [`Token Toll_0.1.2_x64-setup.exe`](https://github.com/aaaeeezynx/tokentoll/releases/download/v0.1.2/Token.Toll_0.1.2_x64-setup.exe) | 4.0 MB | **NSIS 安裝包（推薦）**，雙擊安裝 |
-| [`Token Toll_0.1.2_x64_en-US.msi`](https://github.com/aaaeeezynx/tokentoll/releases/download/v0.1.2/Token.Toll_0.1.2_x64_en-US.msi) | 8.4 MB | MSI 安裝包，適合企業佈署 |
+| [`Token Toll_0.1.3_x64-setup.exe`](https://github.com/aaaeeezynx/tokentoll/releases/download/v0.1.3/Token.Toll_0.1.3_x64-setup.exe) | 4.1 MB | **NSIS 安裝包（推薦）**，雙擊安裝 |
+| [`Token Toll_0.1.3_x64_en-US.msi`](https://github.com/aaaeeezynx/tokentoll/releases/download/v0.1.3/Token.Toll_0.1.3_x64_en-US.msi) | 8.5 MB | MSI 安裝包，適合企業佈署 |
 
-> 版本號 `0.1.2` 在 `Cargo.toml`／`tauri.conf.json`／`package.json` 三者一致。
+> 版本號 `0.1.3` 在 `Cargo.toml`／`tauri.conf.json`／`package.json` 三者一致。完整變更見 [CHANGELOG.md](CHANGELOG.md)。
 
 **系統需求**：Windows 10 1809+ / Windows 11（x64）· WebView2 Runtime（Win10／11 一般自帶）
 
 > **未簽名版本**：SmartScreen 會提示「未知的發行者」，選「仍要執行」即可。
 > 想自行核對檔案完整性，SHA256 校驗碼寫在 Release 說明裡。
 
-> **Latest release: v0.1.2.** Unsigned build: SmartScreen will warn about an
+> **Latest release: v0.1.3.** Unsigned build: SmartScreen will warn about an
 > unknown publisher — choose "Run anyway". Requires WebView2 Runtime.
+
+---
+
+## v0.1.3 更新 · What's new
+
+- **一鍵自動偵測連線設定**：只填地址與金鑰，自動判斷路徑前綴與每個模型的協議。
+- **Gemini 上游可用於 Codex／Chat 客戶端**（OpenAI ⇄ Gemini 反向翻譯），並修掉工具呼叫的三個問題（`thoughtSignature` 往返、schema 白名單、`functionResponse.name`）。
+- **OpenCode Go 用量卡片恢復**；批次思考強度偵測改為一行式輸出與進度條。
+
+完整內容見 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 

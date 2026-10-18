@@ -36,12 +36,6 @@ export const API_FORMATS_ADVANCED = [
   "anthropic",
   "gemini",
 ];
-export const AUTH_SCHEMES = [
-  { id: "bearer", label: "Bearer（預設）" },
-  { id: "goog-key", label: "Google API Key" },
-  { id: "anthropic", label: "Anthropic API Key" },
-];
-
 export const EMPTY_INPUT: ProviderInput = {
   name: "",
   app_type: "universal",

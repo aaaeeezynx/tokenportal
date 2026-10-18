@@ -55,12 +55,6 @@ export function watchSystemTheme(cb: () => void): () => void {
   return () => mq.removeEventListener("change", handler);
 }
 
-export const THEME_LABEL: Record<ThemePref, string> = {
-  system: "跟隨系統",
-  light: "淺色",
-  dark: "深色",
-};
-
 export function isThemePref(v: unknown): v is ThemePref {
   return v === "system" || v === "light" || v === "dark";
 }

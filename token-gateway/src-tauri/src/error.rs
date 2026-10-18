@@ -108,12 +108,6 @@ impl CmdError {
         &self.message
     }
 
-    /// 拆出訊息，讓呼叫端在需要 `String` 的介面（例如 Tauri 命令回傳值）
-    /// 邊界上取得原本的文字。
-    pub fn into_message(self) -> String {
-        self.message
-    }
-
     /// 包裝任何 `Display` 錯誤為 `Internal`（IO、SQLite、serde 等）。
     ///
     /// 這些錯誤一律不是使用者造成的，訊息保留原文以便回報。
