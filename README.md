@@ -33,8 +33,7 @@ Token Portal 在本機 (`127.0.0.1`) 開一個 OpenAI／Anthropic／Gemini 兼�
 │   │   ├── src/tools/        #     工具接管／還原
 │   │   ├── src/quota/        #     訂閱額度查詢
 │   │   └── icons/            #     應用程式圖示（17 個尺寸）
-│   ├── docs/screenshots/     #   README 用的實際畫面
-│   └── README.md             #   與本文件相同的完整說明
+│   └── docs/screenshots/     #   README 用的實際畫面
 ├── docs/                     # 開發與測試紀錄（見下方說明）
 └── scripts/                  # 開發期間的診斷小工具
 ```
@@ -42,9 +41,9 @@ Token Portal 在本機 (`127.0.0.1`) 開一個 OpenAI／Anthropic／Gemini 兼�
 | 目錄 | 內容 |
 |---|---|
 | [`token-gateway/`](./token-gateway) | **應用程式本體**。建置、執行、打包都在這裡 |
-| [`token-gateway/README.md`](./token-gateway/README.md) | 完整說明文件（與本 README 內容相同） |
 | [`docs/`](./docs) | 開發紀錄：[`TESTING.md`](./docs/TESTING.md)（每個功能的設計與實機驗證）、[`evidence/`](./docs/evidence)（幾次事故的排錯證據） |
 | [`scripts/`](./scripts) | 開發期間用的診斷腳本，非執行期程式碼 |
+| [`CHANGELOG.md`](./CHANGELOG.md) | 各版本變更紀錄 |
 
 > `docs/` 是這個專案「怎麼被做出來的」的第一手紀錄 —— 每一輪改動的要求、真因、
 > 修法、閘門結果與實機驗證都在裡面。想了解設計取捨的話從那裡看最快。
