@@ -82,6 +82,7 @@ mod prefixes;
 mod failover_plan;
 #[path = "tests/strip.rs"]
 mod strip;
+mod dump;
 #[path = "tests/matrix.rs"]
 mod matrix;
 #[path = "tests/e2e_basic.rs"]

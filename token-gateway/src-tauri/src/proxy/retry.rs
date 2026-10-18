@@ -220,8 +220,14 @@ pub(super) async fn send_with_strip_retry(
             let eb2 = r.bytes().await.unwrap_or_default().to_vec();
             let eb2_full = String::from_utf8_lossy(&eb2).to_string();
             // 剝離後仍失敗 → 這是真正未解決的 400，完整留痕
+            // 上游什麼都沒說 → 把我們送出去的原文存檔，否則事後無法重現
+            let dumped = dump_if_silent(rc, &body, &eb2);
+            let note = match &dumped {
+                Some(p) => format!("剝離後重試仍失敗（未解決）；現場已存到 {}", p.display()),
+                None => "剝離後重試仍失敗（未解決）".to_string(),
+            };
             let rec = rc
-                .trace(st.as_u16(), applied.clone(), "剝離後重試仍失敗（未解決）")
+                .trace(st.as_u16(), applied.clone(), &note)
                 .with_body(&body)
                 .with_upstream_error(&eb2_full);
             trace::log_to(&rc.req.ctx.db_path, &rec);
@@ -250,13 +256,19 @@ pub(super) async fn send_with_strip_retry(
                 return o;
             }
             // 無法從錯誤訊息解析出欄位名 → 相容策略失效，必須留痕才能改進
-            let note = if applied.is_empty() {
+            // 空回包 = 沒有任何線索。把送出的原文存檔，並在訊息裡指出位置。
+            let dumped = dump_if_silent(rc, &body, &eb);
+            let base = if applied.is_empty() {
                 "上游 400 且無法解析出拒收欄位名（相容策略失效）"
             } else {
                 "上游 400（剝離未命中任何欄位）"
             };
+            let note = match &dumped {
+                Some(p) => format!("{base}；現場已存到 {}", p.display()),
+                None => base.to_string(),
+            };
             let rec = rc
-                .trace(400, applied.clone(), note)
+                .trace(400, applied.clone(), &note)
                 .with_body(&body)
                 .with_upstream_error(&upstream_full);
             trace::log_to(&rc.req.ctx.db_path, &rec);
@@ -267,7 +279,10 @@ pub(super) async fn send_with_strip_retry(
                     rc.req.app,
                     rc.req.model_raw,
                     StatusCode::BAD_REQUEST,
-                    upstream_text,
+                    match &dumped {
+                        Some(p) => format!("{upstream_text}（送出的請求已存到 {}）", p.display()),
+                        None => upstream_text,
+                    },
                 )),
                 retryable: false,
             }
@@ -355,4 +370,19 @@ async fn retry_without_reasoning(
             retryable: true,
         }),
     }
+}
+
+/// 上游回 4xx **卻一個字都沒說**時，把送出的請求體存檔。
+///
+/// 只有「空回包」才存 —— 上游有給訊息時，訊息本身就是線索，不必倒一份
+/// 可能很長的對話到磁碟。
+fn dump_if_silent(
+    rc: &RetryCtx<'_>,
+    body: &[u8],
+    upstream: &[u8],
+) -> Option<std::path::PathBuf> {
+    if !upstream.iter().all(|b| b.is_ascii_whitespace()) {
+        return None;
+    }
+    super::dump::dump_upstream_failure(&rc.req.ctx.db_path, body, upstream)
 }

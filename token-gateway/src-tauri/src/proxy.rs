@@ -51,6 +51,7 @@ mod logging;
 mod stream;
 mod forward;
 mod retry;
+mod dump;
 mod finish;
 mod pipeline;
 mod reqctx;
