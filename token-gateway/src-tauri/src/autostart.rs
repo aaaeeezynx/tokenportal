@@ -2,7 +2,7 @@
 //!
 //! Windows 上用**登錄檔的 Run 機碼**（cc-switch 手冊也是這樣寫的）：
 //! `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 底下的字串值
-//! `TokenGateway` = `"C:\…\tokentoll.exe"`。
+//! `TokenGateway` = `"C:\…\tokenportal.exe"`。
 //!
 //! 值名稱 `TokenGateway` **刻意不隨品牌改名**：它已經寫進使用者的登錄檔，
 //! 改了會讓既有的自啟設定變成孤兒（使用者得重新開啟自啟），而使用者看不到

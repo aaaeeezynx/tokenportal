@@ -216,7 +216,7 @@ function Shell() {
           </span>
           <div className="hidden md:block">
             <div className="text-[13px] font-semibold tracking-tight text-fg">
-              Token Toll
+              Token Portal
             </div>
             <div
               className="text-[10px]"

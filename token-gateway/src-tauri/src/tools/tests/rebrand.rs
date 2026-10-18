@@ -7,7 +7,7 @@
 //! 從 `tools/tests/codex.rs` 抽出來（該檔在改名後超過 400 行上限）。
 
 use super::*;
-use crate::providers_io::{EXPORT_KIND, EXPORT_KIND_LEGACY, EXPORT_KINDS};
+use crate::providers_io::{EXPORT_KIND, EXPORT_KIND_LEGACY, EXPORT_KIND_PREV, EXPORT_KINDS};
 
 /// 接管時，新舊渠道段名**都要**建立並指向網關。
 ///
@@ -59,6 +59,8 @@ fn doctor_accepts_env_key_under_either_name() {
 #[test]
 fn import_accepts_legacy_export_kind() {
     assert!(EXPORT_KINDS.contains(&EXPORT_KIND));
+    assert!(EXPORT_KINDS.contains(&EXPORT_KIND_PREV));
+    assert_eq!(EXPORT_KIND_PREV, "tokentoll/providers");
     assert!(EXPORT_KINDS.contains(&EXPORT_KIND_LEGACY));
     assert_eq!(EXPORT_KIND_LEGACY, "token-gateway/providers");
 }

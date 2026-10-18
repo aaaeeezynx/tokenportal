@@ -34,7 +34,7 @@ pub(crate) async fn run(
     }
     .timeout(timeout)
     .header("accept", "application/json")
-    .header("user-agent", "tokentoll/usage-query");
+    .header("user-agent", "tokenportal/usage-query");
     for h in &cfg.headers {
         let name = h.name.trim();
         if name.is_empty() {

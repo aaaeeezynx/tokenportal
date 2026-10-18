@@ -122,16 +122,20 @@ pub struct ExportProvider {
 /// 2026-10-04 品牌改名（Token Gateway → Token Toll），值由
 /// `token-gateway/providers` 改為 `tokentoll/providers`；**匯入端新舊都認**
 /// （見 [`EXPORT_KINDS`]），使用者先前匯出的檔案仍可匯入。
-pub const EXPORT_KIND: &str = "tokentoll/providers";
+pub const EXPORT_KIND: &str = "tokenportal/providers";
 
 /// 改名前的類型標記。
+/// Token Toll 時代的類型標記。
+pub const EXPORT_KIND_PREV: &str = "tokentoll/providers";
+
+/// 更早（Token Gateway 時代）的類型標記。
 pub const EXPORT_KIND_LEGACY: &str = "token-gateway/providers";
 
 /// 匯入時接受的類型標記（新名優先，舊名相容）。
-pub const EXPORT_KINDS: [&str; 2] = [EXPORT_KIND, EXPORT_KIND_LEGACY];
+pub const EXPORT_KINDS: [&str; 3] = [EXPORT_KIND, EXPORT_KIND_PREV, EXPORT_KIND_LEGACY];
 
 /// 匯出檔的檔名前綴：`{stem}-{stamp}.json`。
-pub const EXPORT_FILE_STEM: &str = "tokentoll-providers";
+pub const EXPORT_FILE_STEM: &str = "tokenportal-providers";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportFile {

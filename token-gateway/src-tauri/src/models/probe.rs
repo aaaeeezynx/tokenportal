@@ -272,8 +272,8 @@ fn send(cfg: &ProbeCfg, body: &serde_json::Value) -> Result<(u16, String), Strin
         // 2026-10-08 由真機測試抓到：opencode-go 少了 `x-opencode-session`
         // 會直接回 400 `MissingSessionID`（基準就失敗，整輪誤判成中止）；
         // 而 Cloudflare 對泛用的程式庫 UA 會回 403。
-        .header("x-opencode-session", "tokentoll-probe")
-        .header("User-Agent", "tokentoll-probe/0.1");
+        .header("x-opencode-session", "tokenportal-probe")
+        .header("User-Agent", "tokenportal-probe/0.1");
     req = match cfg.protocol.as_str() {
         "anthropic" => req
             .header("x-api-key", &cfg.key)

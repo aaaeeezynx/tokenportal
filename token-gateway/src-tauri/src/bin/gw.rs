@@ -18,9 +18,9 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
         .await
         .unwrap();
-    eprintln!("Token Toll proxy listening on 127.0.0.1:{port}");
+    eprintln!("Token Portal proxy listening on 127.0.0.1:{port}");
     eprintln!("DB: {}", db_path.display());
-    match tokentoll_lib::proxy::serve(db_path, listener).await {
+    match tokenportal_lib::proxy::serve(db_path, listener).await {
         Ok(()) => eprintln!("proxy exited normally"),
         Err(e) => eprintln!("proxy error: {e}"),
     }

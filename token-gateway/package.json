@@ -1,5 +1,5 @@
 {
-  "name": "tokentoll",
+  "name": "tokenportal",
   "private": true,
   "version": "0.1.3",
   "description": "Local AI toll booth — meter, route, and account for every token your coding agents spend",

@@ -209,8 +209,8 @@ fn send_protocol(cfg: &ProbeCfg, protocol: &str) -> Result<(u16, String, usize),
         let mut req = c
             .post(url)
             .json(&body)
-            .header("x-opencode-session", "tokentoll-probe")
-            .header("User-Agent", "tokentoll-probe/0.1");
+            .header("x-opencode-session", "tokenportal-probe")
+            .header("User-Agent", "tokenportal-probe/0.1");
         req = if protocol == "anthropic" {
             req.header("x-api-key", &cfg.key)
                 .header("anthropic-version", "2023-06-01")

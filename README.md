@@ -1,4 +1,4 @@
-# Token Toll · 本機 AI 用量收費站
+# Token Portal · 本機 AI 用量收費站
 
 > Your local AI toll booth — meter, route, and account for every token your coding agents spend.
 >
@@ -16,7 +16,7 @@
 
 你在同一台機器上跑 Codex、Claude Code、OpenCode 等工具，每個都要自己填上游網址與金鑰，額度、限流、花了多少錢散在各處，沒有一個地方看得全。
 
-Token Toll 在本機 (`127.0.0.1`) 開一個 OpenAI／Anthropic／Gemini 兼容的入口：車輛過收費站要計費，token 過閘道要計量——把多個上游聚合成一個端點，替每個工具簽發獨立的本地 Key（各自配額、限流、模型白名單），攔下每一次請求做精確計量與計價，並把各工具的歷史會話用量一併補登進同一本帳。
+Token Portal 在本機 (`127.0.0.1`) 開一個 OpenAI／Anthropic／Gemini 兼容的入口：車輛過收費站要計費，token 過閘道要計量——把多個上游聚合成一個端點，替每個工具簽發獨立的本地 Key（各自配額、限流、模型白名單），攔下每一次請求做精確計量與計價，並把各工具的歷史會話用量一併補登進同一本帳。
 
 **全部資料留在本機 SQLite，不經過任何第三方伺服器。** 網關只監聽 `127.0.0.1`，不對外開放。
 
@@ -232,12 +232,12 @@ macOS 27 風格的介面：Liquid Glass、深／淺／跟隨系統三種主題�
 
 ### 最新版本 · v0.1.3
 
-**[⬇ 前往 Releases 頁下載](https://github.com/aaaeeezynx/tokentoll/releases/latest)**
+**[⬇ 前往 Releases 頁下載](https://github.com/aaaeeezynx/tokenportal/releases/latest)**
 
 | 檔案 | 大小 | 說明 |
 |---|---|---|
-| [`Token Toll_0.1.3_x64-setup.exe`](https://github.com/aaaeeezynx/tokentoll/releases/download/v0.1.3/Token.Toll_0.1.3_x64-setup.exe) | 4.1 MB | **NSIS 安裝包（推薦）**，雙擊安裝 |
-| [`Token Toll_0.1.3_x64_en-US.msi`](https://github.com/aaaeeezynx/tokentoll/releases/download/v0.1.3/Token.Toll_0.1.3_x64_en-US.msi) | 8.5 MB | MSI 安裝包，適合企業佈署 |
+| [`Token Portal_0.1.3_x64-setup.exe`](https://github.com/aaaeeezynx/tokenportal/releases/download/v0.1.3/Token.Portal_0.1.3_x64-setup.exe) | 4.1 MB | **NSIS 安裝包（推薦）**，雙擊安裝 |
+| [`Token Portal_0.1.3_x64_en-US.msi`](https://github.com/aaaeeezynx/tokenportal/releases/download/v0.1.3/Token.Portal_0.1.3_x64_en-US.msi) | 8.5 MB | MSI 安裝包，適合企業佈署 |
 
 > 版本號 `0.1.3` 在 `Cargo.toml`／`tauri.conf.json`／`package.json` 三者一致。完整變更見 [CHANGELOG.md](CHANGELOG.md)。
 

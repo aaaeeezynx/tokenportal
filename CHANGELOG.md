@@ -1,6 +1,6 @@
 # Changelog
 
-本檔記錄 Token Toll 每個版本的變更。格式參照 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)，版本號遵循 [SemVer](https://semver.org/lang/zh-TW/)。
+本檔記錄 Token Portal 每個版本的變更。格式參照 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)，版本號遵循 [SemVer](https://semver.org/lang/zh-TW/)。
 
 ---
 
@@ -25,6 +25,7 @@
 
 ### 變更
 
+- **專案更名為 Token Portal**（原 Token Toll）：安裝路徑、執行檔與 Release 檔名隨之改變；資料位置（`%APPDATA%\com.tokencounter.gateway\`）與既有的 Codex／OpenCode 接管設定不受影響。
 - **來源編輯頁移除三項設定**：接口格式、逐協議路徑前綴、鑑權方式，改由自動偵測決定。欄位仍保留於資料庫，以支援匯入／匯出與偵測寫入。
 - **批次思考強度偵測輸出簡化**：改為 `模型名稱：low / medium / high` 一行式，並以進度條顯示進度（與用量頁同一套設計語言）。
 - 按鈕改名為「偵測思考強度」，高度固定為單行。

@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    tokentoll_lib::run()
+    tokenportal_lib::run()
 }

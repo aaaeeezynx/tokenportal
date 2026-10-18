@@ -62,7 +62,7 @@ pub(crate) fn query_claude() -> SubscriptionQuota {
     };
     let client = match reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
-        .user_agent("tokentoll/0.1 quota")
+        .user_agent("tokenportal/0.1 quota")
         .build()
     {
         Ok(c) => c,

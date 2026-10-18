@@ -61,7 +61,7 @@ pub(crate) fn gateway_section(
     auth: CodexAuth<'_>,
 ) -> toml_edit::Table {
     let mut tbl = toml_edit::Table::new();
-    tbl["name"] = toml_edit::value("Token Toll");
+    tbl["name"] = toml_edit::value("Token Portal");
     tbl["base_url"] = toml_edit::value(base_url);
     match auth.direct_key {
         // 直連上游：Bearer 即上游 Key，明文寫入（用戶顯式選擇，見警告）

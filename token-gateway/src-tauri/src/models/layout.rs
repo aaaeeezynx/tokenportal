@@ -159,8 +159,8 @@ fn probe_base(cfg: &LayoutCfg, base: &str, known: Option<&KnownLayout>) -> Vec<P
                     "contents": [{"role": "user", "parts": [{"text": "hi"}]}],
                     "max_tokens": 4,
                 }))
-                .header("x-opencode-session", "tokentoll-layout")
-                .header("User-Agent", "tokentoll-layout/0.1")
+                .header("x-opencode-session", "tokenportal-layout")
+                .header("User-Agent", "tokenportal-layout/0.1")
                 .timeout(Duration::from_secs(TOTAL_TIMEOUT_SECS));
             req = match protocol {
                 "anthropic" => req
