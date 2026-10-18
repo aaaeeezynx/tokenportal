@@ -4,10 +4,10 @@
 >
 > 本機 AI 用量收費站（Windows）：把多個上游聚合成一個 OpenAI 兼容入口、按工具簽發本地 Key、每一分錢燒在哪裡都看得見。
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./token-gateway/LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Platform: Windows x64](https://img.shields.io/badge/Platform-Windows%20x64-0078D4.svg)](#下載--download)
 [![Built with Tauri 2](https://img.shields.io/badge/Built%20with-Tauri%202-ffc131.svg)](https://tauri.app)
-[![Tests: 325 passing](https://img.shields.io/badge/tests-325%20passing-brightgreen.svg)](#專案狀態--project-status)
+[![Tests: 425 passing](https://img.shields.io/badge/tests-425%20passing-brightgreen.svg)](#專案狀態--project-status)
 [![Local only: 127.0.0.1](https://img.shields.io/badge/network-localhost%20only-success.svg)](#資料與隱私--data--privacy)
 
 ---
@@ -391,11 +391,11 @@ pnpm tauri build    # 打包 · packaging
 
 | 指標 | 值 |
 |---|---|
-| 版本 | `0.1.2` |
-| Schema | **v15** |
-| 測試 | **329 passed / 0 failed / 10 ignored** |
+| 版本 | `0.1.3` |
+| Schema | **v18** |
+| 測試 | **425 passed / 0 failed / 17 ignored** |
 | Clippy | 0 warning（`-D warnings`） |
-| 程式碼規模 | Rust ≈ 25,000 行 ／ TypeScript ≈ 12,700 行 |
+| 程式碼規模 | Rust ≈ 32,400 行 ／ TypeScript ≈ 13,200 行 |
 | 授權 | MIT |
 | 對外網路 | **只監聽 `127.0.0.1`**；除你設定的上游端點外不對外連線 |
 
@@ -419,4 +419,4 @@ pnpm tauri build    # 打包 · packaging
 
 ## 授權 · License
 
-[MIT](./token-gateway/LICENSE) © 2026 aaaeeezynx
+[MIT](./LICENSE) © 2026 aaaeeezynx
