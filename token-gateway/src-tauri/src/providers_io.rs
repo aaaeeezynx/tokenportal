@@ -122,6 +122,9 @@ pub struct ExportProvider {
 /// 2026-10-04 品牌改名（Token Gateway → Token Toll），值由
 /// `token-gateway/providers` 改為 `tokentoll/providers`；**匯入端新舊都認**
 /// （見 [`EXPORT_KINDS`]），使用者先前匯出的檔案仍可匯入。
+///
+/// 2026-10-19 再更名為 Token Portal，值改為 `tokenportal/providers`；
+/// 兩代舊值都留在 [`EXPORT_KINDS`] 裡，任何時期的匯出檔都能匯入。
 pub const EXPORT_KIND: &str = "tokenportal/providers";
 
 /// 改名前的類型標記。

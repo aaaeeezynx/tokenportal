@@ -13,6 +13,10 @@ pub const GATEWAY_HOST: &str = "127.0.0.1";
 /// `TOKEN_GATEWAY_KEY` 改為 `TOKEN_TOLL_KEY`。使用者的系統環境變數與工具設定
 /// （Codex `env_key`、OpenCode `{env:}`）都已經寫入舊名，兩者必須並存：
 /// 讀取時兩個都認，寫入時用新名。見 [`GATEWAY_ENV_KEYS`]。
+///
+/// 2026-10-19 品牌再更名為 Token Portal：**環境變數名刻意維持
+/// `TOKEN_TOLL_KEY`** —— 它已經寫進使用者的系統環境變數與工具設定，
+/// 改名會讓既有接管失效，而使用者看不到這個名稱，改了沒有效益。
 pub const GATEWAY_ENV_KEY: &str = "TOKEN_TOLL_KEY";
 
 /// 品牌改名前的環境變數名（`TOKEN_GATEWAY_KEY`）。

@@ -79,7 +79,7 @@ export default function SettingsPage() {
       const rangeTag = csvCustom ? `custom-${csvCustom.start}-${csvCustom.end}` : csvRange;
       const a = document.createElement("a");
       a.href = url;
-      a.download = `token-gateway-usage-${rangeTag}-${stamp}.csv`;
+      a.download = `token-portal-usage-${rangeTag}-${stamp}.csv`;
       a.click();
       URL.revokeObjectURL(url);
       const rows = csv.trim().split("\n").length - 1;

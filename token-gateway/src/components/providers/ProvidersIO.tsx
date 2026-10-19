@@ -213,7 +213,7 @@ export function ProvidersIO(props: { count: number }) {
                   <div className="flex flex-1 items-center gap-1.5">
                     <input
                       className="field w-full px-2.5 py-1.5 font-mono text-[11px]"
-                      placeholder="貼上剛匯出的路徑，例如 …\Downloads\token-gateway-providers-….json"
+                      placeholder="貼上剛匯出的路徑，例如 …\Downloads\tokenportal-providers-….json"
                       value={importPath}
                       onChange={(e) => setImportPath(e.target.value)}
                     />
@@ -250,7 +250,7 @@ export function ProvidersIO(props: { count: number }) {
                 </div>
                 <textarea
                   className="field mt-2 h-24 w-full px-3 py-2 font-mono text-[11px]"
-                  placeholder='{"kind":"token-gateway/providers","version":1,"providers":[…]}'
+                  placeholder='{"kind":"tokenportal/providers","version":1,"providers":[…]}'
                   value={paste}
                   onChange={(e) => setPaste(e.target.value)}
                 />

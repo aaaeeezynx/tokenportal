@@ -1,6 +1,7 @@
-//! 品牌改名（Token Gateway → Token Toll）的相容性回歸測試。
+//! 品牌改名的相容性回歸測試（Token Gateway → Token Toll → Token Portal）。
 //!
-//! 2026-10-04 由 Token Gateway 更名為 Token Toll。渠道 ID、環境變數名、匯出格式
+//! 2026-10-04 由 Token Gateway 更名為 Token Toll，2026-10-19 再更名為 Token Portal。
+//! 渠道 ID、環境變數名、匯出格式
 //! 都已經寫進使用者的系統與工具設定，所以**寫入用新名、讀取新舊都認**。
 //! 這裡釘住「舊名仍然可用」這件事，避免日後有人順手把相容分支清掉。
 //!
