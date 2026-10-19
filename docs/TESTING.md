@@ -776,6 +776,156 @@ exit 0，exe 9,026,048 bytes、sha256 `1C9D27A7…`），然後**照你要做的
 
 ---
 
+### 0.9.43 來源預設集從 CC Switch v4.0.4 同步（38 → 195 筆）（2026-10-19）
+
+#### 使用者要求
+
+> 帮我新增这几个功能 这些功能直接对齐ccswitch的既有功能
+> 5.同步CCswitch中來源預設集
+
+#### 做法：先解析、再實測，不憑印象抄
+
+CC Switch 的預設不是一份清單，而是**四份依工具分開的 TypeScript 資料檔**
+（`claudeProviderPresets.ts` 115 KB、`codexProviderPresets.ts` 189 KB、
+`geminiProviderPresets.ts` 23 KB、`opencodeProviderPresets.ts` 130 KB）。
+直接用眼睛抄會漏、會抄錯欄位，所以寫成可重跑的管線：
+
+| 步驟 | 腳本 | 產出 |
+|---|---|---|
+| 1. 下載 | `Invoke-WebRequest` | 四份 `.ts` |
+| 2. 解析 | `parse_presets.py` | 408 筆、有 `base_url` 401 筆、去重 389 筆 |
+| 3. 比對 | `compare.py` | Token Portal 沒有的 164 筆 → 排除本機／佔位符 159 筆 |
+| 4. **實測** | `verify_urls.py` | 159 筆逐筆打 `{base_url}/models` → **保留 157、淘汰 2** |
+| 5. 生成 | `gen_table.py` + `assemble.py` | `presets_cc.rs` |
+
+（腳本與下載的參考檔放在 `/.ccswitch-ref/`，已加入 `.gitignore` ——
+版權屬 farion1231/cc-switch（MIT），本專案**只取資料、不複製它的程式碼**。）
+
+#### 實測結果（2026-10-19，24 執行緒、12 秒逾時、不帶金鑰）
+
+| 狀態 | 筆數 | 意義 |
+|---|---|---|
+| 401 | 89 | 主機活著、需要金鑰 ✅ |
+| 404 | 35 | 主機活著、只是沒有 `/models` ✅ |
+| 200 | 28 | 完全公開 ✅ |
+| 400 / 403 / 405 | 5 | 主機活著、拒絕這個請求 ✅ |
+| **DNS 失敗** | 1 | `www.relaxycode.com` ❌ 淘汰 |
+| **範本佔位符** | 1 | `YOUR_RESOURCE_NAME.openai.azure.com` ❌ 淘汰 |
+
+保留率 **157/159 = 98.7%**。
+
+#### 協議與鑑權的對映（這裡最容易抄錯）
+
+| CC Switch `apiFormat` | 本專案協議 | 鑑權 | 理由 |
+|---|---|---|---|
+| （空，claude 來源） | `anthropic` | `bearer` | `ANTHROPIC_AUTH_TOKEN` 走 `Authorization: Bearer`；只有 `apiKeyField === "ANTHROPIC_API_KEY"` 才是 `x-api-key` |
+| （空，codex 來源） | `openai-responses` | `bearer` | Codex 只講 Responses |
+| `openai_chat` | `openai-chat` | `bearer` | |
+| `openai_responses` | `openai-responses` | `bearer` | |
+| `gemini_native` | `gemini` | `goog-key` | `x-goog-api-key` |
+
+驗證方式：讀 `app/src-tauri/src/proxy/forward.rs:107-126` 的實際分支，
+不是照文件猜。
+
+#### 兩個命名問題與處理
+
+| 問題 | 例子 | 處理 |
+|---|---|---|
+| **id 撞名** | CC Switch 的 `DeepSeek` 指向 `/anthropic`，本專案既有 `deepseek` 指向 `/v1` | **不覆蓋**，新的加網域後綴（`deepseek-api-deepseek`），兩者都留 |
+| **同名不同端點** | 火山 Agent Plan 同時有 Anthropic 端與 OpenAI 端 | 顯示名加協議後綴：`火山 Agent Plan（Anthropic）`／`（OpenAI）` |
+
+#### 為什麼拆成兩個檔案
+
+`presets.rs`（38 筆，人工挑選、2026-09-30 逐筆實測）與
+`presets_cc.rs`（157 筆，機器產生、2026-10-19 批次實測）**維護方式不同**：
+
+- 改 `presets.rs` 要自己想清楚並重跑實測。
+- 改 `presets_cc.rs` 就是「重新同步時整檔換掉」。
+
+混在一起會讓「哪一筆是誰加的、什麼時候驗的」說不清楚。
+
+#### 實機驗證（CDP 讀真實 DOM）
+
+| 驗證項 | 結果 |
+|---|---|
+| 清單頁尾文字 | ✅「全部 **195** 個預設」 |
+| 實際渲染列數 | ✅ **195** 列（無虛擬滾動，全渲染） |
+| 搜尋「Kimi」 | ✅ 命中 6 筆，含新同步的 `Kimi For Coding`、`Kimi Global（Anthropic）` |
+| 搜尋過濾即時生效 | ✅ 6 筆 |
+
+#### 閘門
+
+| 項目 | 結果 |
+|---|---|
+| `cargo test --offline --lib` | **425 passed / 0 failed / 17 ignored** ✅ |
+| `cargo clippy --offline --all-targets` | **0 warning** ✅ |
+| `pnpm exec tsc --noEmit` | exit 0 ✅ |
+| `pnpm exec tauri build` | exit 0 ✅ |
+| 行數 | `presets.rs` 234、`presets_cc.rs` 207（皆 ≤400）✅ |
+
+---
+
+### 0.9.44 用量查詢樣板：從 CC Switch 同步餘額／套餐額度（6 → 10 個）（2026-10-19）
+
+#### 使用者要求
+
+> 6.同步CCswitch中官方订阅配额／余额
+
+#### 先查清楚「官方訂閱配額」在本專案已經有什麼
+
+不是從零開始 —— 本專案已經有 `quota/` 模組處理**走本機憑證**的三家：
+
+| 已支援 | 憑證來源 | 端點 |
+|---|---|---|
+| Claude 訂閱 | `~/.claude/.credentials.json` 的 OAuth token | `api.anthropic.com/api/oauth/usage` |
+| Codex 訂閱 | `~/.codex/auth.json` | `chatgpt.com/backend-api/wham/usage` |
+| OpenCode Go | `~/.local/share/opencode/auth.json` | `opencode.ai/zen/go/v1/usage` |
+
+所以這次要補的是**用 API Key 查、不需要本機登入**的那些 ——
+也就是 `usage_query/` 的樣板（宣告式抽取規格）。
+
+#### 新增 4 個樣板（形狀取自 CC Switch 的實際解析程式碼）
+
+| 樣板 | 端點 | 回應形狀 | 關鍵細節 |
+|---|---|---|---|
+| `kimi-coding` | `GET api.kimi.com/coding/v1/usages` | `{limits:[{detail:{limit,remaining}}], usage:{limit,remaining}}` | 取整體 `usage`（週限額） |
+| `zhipu-coding` | `GET {base}/api/monitor/usage/quota/limit` | `{data:{limits:[{type:"TOKENS_LIMIT",percentage,nextResetTime}]}}` | **只回百分比**，要靠新加的 `complement`／`constant` |
+| `stepfun-balance` | `GET api.stepfun.com/v1/accounts` | `{balance}` | 單位 CNY |
+| `novita-balance` | `GET api.novita.ai/v3/user/balance` | `{availableBalance}` | **單位是 0.0001 USD**，要除以 10000 |
+
+#### 抽取器補了兩個運算（`extract.rs`）
+
+原本只有 `path`／`subtract`／`divide`／`multiply`。智譜只回「已用百分比」，
+沒有絕對總量可指，所以補：
+
+| 欄位 | 語意 | 智譜的用法 |
+|---|---|---|
+| `complement` | `值 = complement − 取到的值` | `{"path":"data.limits.0.percentage","complement":100}` → 剩餘% |
+| `constant` | 直接回這個常數（不需要 `path`） | `{"constant":100}` → total 固定 100 |
+
+兩個都有測試（`num_spec_complement_and_constant`），含「`
+沒有 path 也沒有 constant 要回 None`」與「常數優先於 path」的邊界。
+
+#### 為什麼只補 4 個而不是 cc-switch 的全部
+
+cc-switch 的 `coding_plan.rs` 有 **137 KB**、`subscription.rs` 70 KB，
+裡面大量是**每家一套的專用解析**（火山方舟要簽名 OpenAPI、Command Code 要
+特殊認證、ZenMux 有自己的 `/alpha/*` 端點）。本專案的樣板是**宣告式規格**，
+只吃得下「打一個網址、從 JSON 取幾個數字」的形狀。
+
+所以原則是：**形狀能在宣告式規格裡表達、而且我讀得到它真正的解析程式碼**的才收。
+其餘的留給「自訂」樣板，不假裝支援。
+
+#### 閘門
+
+| 項目 | 結果 |
+|---|---|
+| `cargo test --offline --lib usage_query` | **21 passed / 0 failed** ✅ |
+| `cargo clippy --offline --all-targets` | 0 warning ✅ |
+| 行數 | `extract.rs` 222、`templates.rs` 268（皆 ≤400）✅ |
+
+---
+
 ### 0.9.41 品牌更名：Token Gateway → Token Toll（2026-10-04）
 
 #### 使用者要求

@@ -87,6 +87,43 @@ const TABLES: &[(&str, &str, &str, &str, &str, &str, &str)] = &[
         r#"{"remaining":"data.totalBalance","used":"data.chargeBalance","unit":"CNY"}"#,
         "SiliconFlow 的 /user/info 回 {data:{totalBalance,chargeBalance,…}}。形狀取自公開文件、未經我方實測，請先按測試。",
     ),
+    // ── 2026-10-19 從 CC Switch 同步（形狀取自它的實際解析程式碼）──
+    (
+        "kimi-coding",
+        "Kimi For Coding 套餐額度",
+        "https://api.kimi.com/coding/v1/usages",
+        "GET",
+        r#"[["Authorization","Bearer {{apiKey}}"]]"#,
+        r#"{"total":"usage.limit","remaining":"usage.remaining","used":{"path":"usage.limit","subtract":"usage.remaining"},"unit":"%","validPath":"usage.limit"}"#,
+        "Kimi 套餐：GET api.kimi.com/coding/v1/usages（Bearer）回 {limits:[{detail:{limit,remaining,resetTime}}], usage:{limit,remaining,resetTime}}。這裡取整體的 usage（週限額）；5 小時窗口在 limits[].detail。",
+    ),
+    (
+        "zhipu-coding",
+        "智譜 GLM 套餐額度",
+        "{{baseUrl}}/api/monitor/usage/quota/limit",
+        "GET",
+        r#"[["Authorization","Bearer {{apiKey}}"]]"#,
+        r#"{"used":"data.limits.0.percentage","remaining":{"path":"data.limits.0.percentage","complement":100},"total":{"constant":100},"unit":"%","validPath":"data.limits.0.percentage"}"#,
+        "智譜只回『已用百分比』：{data:{limits:[{type:'TOKENS_LIMIT',percentage,nextResetTime}]}}。used 就是 percentage 本身，remaining 用 complement 取 100−percentage，total 固定 100。新套餐會有兩條（5 小時＋週），這裡取第一條。",
+    ),
+    (
+        "stepfun-balance",
+        "階躍星辰餘額",
+        "https://api.stepfun.com/v1/accounts",
+        "GET",
+        r#"[["Authorization","Bearer {{apiKey}}"]]"#,
+        r#"{"remaining":"balance","unit":"CNY","validPath":"balance"}"#,
+        "StepFun 的 GET /v1/accounts（Bearer）回 {balance}，單位 CNY。形狀取自 CC Switch 的實際解析。",
+    ),
+    (
+        "novita-balance",
+        "Novita AI 餘額",
+        "https://api.novita.ai/v3/user/balance",
+        "GET",
+        r#"[["Authorization","Bearer {{apiKey}}"]]"#,
+        r#"{"remaining":{"path":"availableBalance","divide":10000},"unit":"USD","validPath":"availableBalance"}"#,
+        "Novita 的 GET /v3/user/balance（Bearer）回 {availableBalance}，**單位是 0.0001 USD**，所以要除以 10000。形狀取自 CC Switch 的實際解析。",
+    ),
     (
         "custom",
         "自訂",
@@ -233,5 +270,57 @@ mod tests {
             "nope",
         );
         assert_eq!(same.template, "mine");
+    }
+
+    /// 智譜只回「已用百分比」。這條測試把 `used` 與 `remaining` 的**方向**鎖住 ——
+    /// 兩者寫反了畫面看起來仍然「有數字」，但意思剛好相反（實機驗證時抓到過）。
+    #[test]
+    fn zhipu_template_keeps_used_and_remaining_the_right_way_round() {
+        use crate::usage_query::extract::NumSpec;
+
+        let t = template("zhipu-coding").expect("zhipu-coding 樣板必須存在");
+        let ex = &t.config.extractor;
+
+        // 上游真實形狀：percentage 是「已用 37.5%」
+        let body: serde_json::Value = serde_json::from_str(
+            r#"{"code":200,"data":{"limits":[
+                 {"type":"TOKENS_LIMIT","percentage":37.5,"nextResetTime":1761000000000}
+               ]}}"#,
+        )
+        .unwrap();
+
+        let used = NumSpec::parse(&ex["used"]).expect("used 規格");
+        let rem = NumSpec::parse(&ex["remaining"]).expect("remaining 規格");
+        let total = NumSpec::parse(&ex["total"]).expect("total 規格");
+
+        assert_eq!(used.eval(&body), Some(37.5), "used 必須就是 percentage 本身");
+        assert_eq!(rem.eval(&body), Some(62.5), "remaining 必須是 100 − percentage");
+        assert_eq!(total.eval(&body), Some(100.0), "total 是固定常數 100");
+        assert_eq!(ex["unit"], "%");
+    }
+
+    /// 同步進來的四個樣板都要有可用的端點（回歸：避免只加 id 忘了填 URL）。
+    #[test]
+    fn synced_templates_have_endpoints() {
+        for id in [
+            "kimi-coding",
+            "zhipu-coding",
+            "stepfun-balance",
+            "novita-balance",
+        ] {
+            let t = template(id).unwrap_or_else(|| panic!("{id} 樣板不存在"));
+            assert!(
+                !t.config.url_template.is_empty(),
+                "{id}：url_template 不可為空"
+            );
+            assert!(
+                t.config.url_template.starts_with("{{baseUrl}}")
+                    || t.config.url_template.starts_with("https://"),
+                "{id}：端點必須是 {{baseUrl}} 相對路徑或完整 https：{}",
+                t.config.url_template
+            );
+            assert!(t.config.extractor.is_object(), "{id}：extractor 必須是物件");
+            assert!(!t.note.is_empty(), "{id}：note 要說明回應形狀");
+        }
     }
 }

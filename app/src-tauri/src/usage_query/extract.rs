@@ -40,6 +40,17 @@ pub struct NumSpec {
     pub subtract: Option<String>,
     pub divide: Option<f64>,
     pub multiply: Option<f64>,
+    /// 取補數：`值 = complement − 取到的值`。
+    ///
+    /// 有些上游只回「已用百分比」（智譜的 `percentage`），而我們要的是「剩餘」
+    /// 或「能不能算成 used/total」。`{"path":"…percentage","complement":100}`
+    /// 就是「100 − 已用%」＝剩餘%。
+    pub complement: Option<f64>,
+    /// 常數（忽略 `path` 的取值結果，直接回這個數）。
+    ///
+    /// 百分比型上游沒有絕對總量，只能說「總共 100%」；卡片的百分比算法是
+    /// `used / total * 100`，所以 total 填 100 就對。
+    pub constant: Option<f64>,
 }
 
 impl NumSpec {
@@ -51,7 +62,13 @@ impl NumSpec {
                 ..Default::default()
             }),
             Value::Object(o) => {
-                let path = o.get("path").and_then(|p| p.as_str())?.to_string();
+                let constant = o.get("constant").and_then(|c| c.as_f64());
+                // 有 constant 就不需要 path（百分比型上游沒有絕對總量可指）
+                let path = match o.get("path").and_then(|p| p.as_str()) {
+                    Some(p) => p.to_string(),
+                    None if constant.is_some() => String::new(),
+                    None => return None,
+                };
                 Some(NumSpec {
                     path,
                     subtract: o
@@ -60,6 +77,8 @@ impl NumSpec {
                         .map(|s| s.to_string()),
                     divide: o.get("divide").and_then(|d| d.as_f64()),
                     multiply: o.get("multiply").and_then(|m| m.as_f64()),
+                    complement: o.get("complement").and_then(|c| c.as_f64()),
+                    constant,
                 })
             }
             _ => None,
@@ -68,9 +87,16 @@ impl NumSpec {
 
     /// 依規格算值。任何一步缺資料就回 `None`。
     pub fn eval(&self, root: &Value) -> Option<f64> {
+        // 常數優先：百分比型上游的 total 就是固定的 100
+        if let Some(c) = self.constant {
+            return c.is_finite().then_some(c);
+        }
         let mut v = lookup_num(root, &self.path)?;
         if let Some(sub) = &self.subtract {
             v -= lookup_num(root, sub)?;
+        }
+        if let Some(c) = self.complement {
+            v = c - v;
         }
         if let Some(d) = self.divide {
             if d == 0.0 || !d.is_finite() {
@@ -184,5 +210,30 @@ mod tests {
         let missing =
             NumSpec::parse(&v(r#"{"path":"quota","subtract":"nope"}"#)).unwrap();
         assert_eq!(missing.eval(&j), None);
+    }
+
+    /// 百分比型上游（智譜只回 `percentage`）：靠 `complement` 與 `constant` 表達。
+    #[test]
+    fn num_spec_complement_and_constant() {
+        let j = v(r#"{"data":{"limits":[{"percentage":37.5}]}}"#);
+        // 剩餘% = 100 − 已用%
+        let rem = NumSpec::parse(&v(
+            r#"{"path":"data.limits.0.percentage","complement":100}"#,
+        ))
+        .unwrap();
+        assert_eq!(rem.eval(&j), Some(62.5));
+        // 常數不需要 path
+        let total = NumSpec::parse(&v(r#"{"constant":100}"#)).unwrap();
+        assert_eq!(total.path, "");
+        assert_eq!(total.eval(&j), Some(100.0));
+        // 常數優先：即使 path 不存在也回常數
+        let both =
+            NumSpec::parse(&v(r#"{"constant":100,"path":"nope"}"#)).unwrap();
+        assert_eq!(both.eval(&j), Some(100.0));
+        // 沒有 path 也沒有 constant → 無效
+        assert!(NumSpec::parse(&v(r#"{"complement":100}"#)).is_none());
+        // 常數不是有限數 → None
+        let nan = NumSpec::parse(&v(r#"{"constant":0}"#)).unwrap();
+        assert_eq!(nan.eval(&j), Some(0.0), "0 是合法常數");
     }
 }
