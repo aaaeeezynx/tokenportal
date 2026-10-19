@@ -106,6 +106,39 @@ export const DICT: Record<string, [string, string]> = {
   "settings.export.done": ["已匯出 {n} 筆", "Exported {n} rows"],
   "settings.export.failed": ["匯出失敗：{e}", "Export failed: {e}"],
 
+  // ── 設定：內建小工具 ──
+  "settings.utilities.title": ["內建小工具", "Built-in utilities"],
+  "settings.utilities.caption": [
+    "對 Claude Code 的設定檔做最小增量修改：只碰一個鍵，其餘原樣保留",
+    "Minimal edits to Claude Code's config files: one key touched, everything else preserved",
+  ],
+  "settings.utilities.onboarding": [
+    "跳過初次安裝確認",
+    "Skip first-run confirmation",
+  ],
+  "settings.utilities.onboarding.desc": [
+    "寫入 ~/.claude.json 的 hasCompletedOnboarding，開啟時不再問「信任這台機器」",
+    "Writes hasCompletedOnboarding to ~/.claude.json so the trust prompt is skipped",
+  ],
+  "settings.utilities.attribution": ["隱藏 AI 署名", "Hide AI attribution"],
+  "settings.utilities.attribution.desc": [
+    "把 ~/.claude/settings.json 的 includeCoAuthoredBy 設為 false，commit 不再加 Co-Authored-By",
+    "Sets includeCoAuthoredBy=false in ~/.claude/settings.json so commits carry no Co-Authored-By",
+  ],
+  "settings.utilities.plugin": [
+    "編輯器擴充整合",
+    "Editor extension integration",
+  ],
+  "settings.utilities.plugin.desc": [
+    "寫入 ~/.claude/config.json 的 primaryApiKey=any，VS Code 擴充不再要求另外貼金鑰",
+    "Writes primaryApiKey=any to ~/.claude/config.json so the VS Code extension stops asking for a key",
+  ],
+  "settings.utilities.hint": [
+    "關閉任何一個開關都是「把那個鍵刪掉」，不是寫反向值 —— 回到這個程式沒碰過的樣子。寫入前會走原子寫入（先寫 .tmp 再 rename），JSON 壞掉時直接拒絕、不會覆蓋你的原檔。",
+    "Turning a switch off deletes the key (not writes the opposite value), restoring the untouched state. Writes are atomic and invalid JSON is refused rather than overwritten.",
+  ],
+  "settings.utilities.failed": ["讀取小工具狀態失敗：{e}", "Failed to read utilities: {e}"],
+
   // ── 設定：關於 ──
   "settings.about.title": ["關於", "About"],
   "settings.about.caption": [

@@ -7,3 +7,4 @@
 export * from "./types/core";
 export * from "./types/extensions";
 export * from "./types/platform";
+export * from "./types/utilities";

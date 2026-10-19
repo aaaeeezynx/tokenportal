@@ -8,12 +8,14 @@ import { useQuery } from "@tanstack/react-query";
 import { coreApi } from "./api/core";
 import { panelsApi } from "./api/panels";
 import { platformApi } from "./api/platform";
+import { utilitiesApi } from "./api/utilities";
 import { DEFAULT_GATEWAY_PORT } from "./apiTypes";
 
 export const api = {
   ...coreApi,
   ...panelsApi,
   ...platformApi,
+  ...utilitiesApi,
 };
 
 export * from "./apiTypes";

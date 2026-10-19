@@ -926,6 +926,69 @@ cc-switch 的 `coding_plan.rs` 有 **137 KB**、`subscription.rs` 70 KB，
 
 ---
 
+### 0.9.45 內建小工具：跳過初次確認／隱藏 AI 署名／編輯器擴充整合（2026-10-19）
+
+#### 使用者要求
+
+> 3.跳過 Claude Code 首次確認、隱藏 AI 署名、VS Code 擴充跟隨切換
+
+#### 三個工具各自動哪個檔（實測 CC Switch v4.0.4 的程式碼）
+
+| 小工具 | 檔案 | 鍵 | 開啟 | 關閉 |
+|---|---|---|---|---|
+| 跳過初次安裝確認 | `~/.claude.json` | `hasCompletedOnboarding` | 寫 `true` | **刪鍵** |
+| 隱藏 AI 署名 | `~/.claude/settings.json` | `includeCoAuthoredBy` | 寫 `false` | **刪鍵** |
+| 編輯器擴充整合 | `~/.claude/config.json` | `primaryApiKey` | 寫 `"any"` | **刪鍵** |
+
+出處：CC Switch 的 `claude_mcp.rs::set_has_completed_onboarding`、
+`claude_plugin.rs::write_claude_config`，以及 `settings.rs` 的
+`includeCoAuthoredBy: false`。**行為對齊，程式碼自寫**（沒有複製）。
+
+#### 三個設計決定
+
+**① 關閉＝刪鍵，不是寫反向值。**
+三個鍵的預設值各不相同（`includeCoAuthoredBy` 預設 `true`、
+`hasCompletedOnboarding` 預設不存在）。寫 `false` 會把使用者的原始設定
+永久改掉；刪鍵才是回到「這個 App 沒碰過」的狀態。
+
+**② 只碰那一個鍵。**
+`~/.claude.json` 可能有幾百 KB 的專案歷史。實測使用者的這個檔有 2,454 bytes
+且含 `hasCompletedOnboarding`；`settings.json` 有 652 bytes 且正在被網關接管
+（`ANTHROPIC_BASE_URL=http://127.0.0.1:15722` 與整組模型映射）。
+測試後 `settings.json` 從 652 → 685 bytes（**剛好是新增那個鍵的大小**），
+`env` 一個字都沒動。
+
+**③ 壞掉的 JSON 直接拒絕，不覆蓋。**
+讀不到物件或解析失敗就回錯，原檔原封不動。這比「盡力修好」安全 ——
+使用者的 Claude 設定檔壞掉不該是我們的錯。
+
+#### 實機驗證（CDP 走真實 IPC）
+
+| 步驟 | 結果 |
+|---|---|
+| 初始狀態 | `skipOnboarding=true`（使用者早就設過）、`hideAttribution=false`、`pluginIntegration=false`、`config.json` 不存在 ✅ |
+| 開 `pluginIntegration` | ✅ `config.json` 被建立、`primaryApiKey="any"` |
+| 開 `hideAttribution` | ✅ `includeCoAuthoredBy: false` 寫入，`env` 完整保留 |
+| 關 `pluginIntegration` | ✅ 檔案留著、只把 `primaryApiKey` 刪掉（內容變 `{}`） |
+
+**測試後的復原**：動刀前備份 `~/.claude.json`（2,454 bytes）與
+`~/.claude/settings.json`（652 bytes）到 `/.ccswitch-ref/claude-backup/`；
+測完把兩個檔還原、並刪掉測試時建立的 `config.json`。
+驗證：`settings.json` 回到 652 bytes、`includeCoAuthoredBy` 已移除、
+`.claude.json` 回到 2,454 bytes、`hasCompletedOnboarding` 仍是 `true`。
+
+#### 閘門
+
+| 項目 | 結果 |
+|---|---|
+| `cargo test --offline --lib` | **436 passed / 0 failed / 17 ignored** ✅ |
+| `cargo clippy --offline --all-targets` | **0 warning** ✅ |
+| `pnpm exec tsc --noEmit` | exit 0 ✅ |
+| `pnpm exec tauri build` | exit 0 ✅ |
+| 行數 | `utilities.rs` 334、`UtilitiesSection.tsx` 103（皆 ≤400）✅ |
+
+---
+
 ### 0.9.41 品牌更名：Token Gateway → Token Toll（2026-10-04）
 
 #### 使用者要求

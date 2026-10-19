@@ -14,6 +14,7 @@ import { Toggle } from "./Toggle";
 import { SectionHead } from "./settings/SectionHead";
 import { useI18n } from "../lib/i18n";
 import { AppearanceSection } from "./settings/AppearanceSection";
+import { UtilitiesSection } from "./settings/UtilitiesSection";
 
 function copyText(t: string) {
   void navigator.clipboard?.writeText(t);
@@ -147,6 +148,9 @@ export default function SettingsPage() {
 
       {/* ── 外觀（P4.3／P4.4／P4.7） ── */}
       <AppearanceSection />
+
+      {/* ── 內建小工具（對標 CC Switch 的 built-in utilities） ── */}
+      <UtilitiesSection />
 
       {/* ── 用量匯出 ── */}
       <div className="glass p-5">

@@ -23,6 +23,7 @@ mod translate;
 mod tray;
 mod usage;
 mod usage_query;
+mod utilities;
 mod window;
 
 use tauri::menu::{Menu, MenuItem};
@@ -190,6 +191,9 @@ pub fn run() {
             commands::window_set_close_action,
             commands::window_enter_lightweight,
             commands::window_show_main,
+            // 內建小工具（見 utilities.rs）
+            utilities::utilities_state,
+            utilities::utilities_set,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
