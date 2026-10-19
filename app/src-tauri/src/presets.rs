@@ -16,6 +16,19 @@
 //! CC Switch 的預設會順便填幾個模型名。我們刻意不填：模型名變動快，猜錯比不填更糟；
 //! 新建來源表單有「取得模型清單」會直接對上游抓 `/models`（`catalog_fetch`）。
 //! 也就是：預設只負責**連線資訊**，模型一律以現場抓到的為準。
+//!
+//! ## 2026-10-19：從 CC Switch v4.0.4 同步（38 → 195 筆）
+//!
+//! 本檔的 38 筆是人工挑選、逐筆實測過的（2026-09-30）；另外 157 筆放在
+//! [`crate::presets_cc`]，是從 CC Switch 的四份預設資料檔同步後**重新實測**
+//! 才收進來的（產生方式與淘汰清單見該檔開頭）。兩張表合起來 195 筆，
+//! 但**來源與維護方式不同，所以刻意分成兩個檔案**：
+//!
+//! - 本檔：人工維護，改動時要重跑實測。
+//! - `presets_cc.rs`：機器產生，重新同步時整檔換掉。
+//!
+//! 命名衝突一律「加後綴」而不是「覆蓋」——例如 CC Switch 的 `DeepSeek`
+//! 指向 `/anthropic`，與本檔的 `deepseek`（`/v1`）是不同端點，兩者都留。
 
 use serde::Serialize;
 
@@ -51,8 +64,18 @@ fn preset_prefixes(id: &str) -> &'static str {
     }
 }
 
+/// 一列的形狀：(id, 名稱, base_url, 協議, 鑑權, 備註)。
+pub(crate) type Row = (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+);
+
 /// (id, 名稱, base_url, 協議, 鑑權, 備註)
-const TABLE: [(&str, &str, &str, &str, &str, &str); 38] = [
+const TABLE: [Row; 38] = [
     // ── 官方 ──
     ("openai", "OpenAI 官方", "https://api.openai.com/v1", "openai-chat", "bearer", ""),
     (
@@ -112,11 +135,19 @@ const TABLE: [(&str, &str, &str, &str, &str, &str); 38] = [
     ("lmstudio", "LM Studio（本機）", "http://localhost:1234/v1", "openai-chat", "bearer", "本機服務，需先在 LM Studio 開啟伺服器；未實測"),
 ];
 
+/// 全部列：本檔手動維護的 38 筆 ＋ 從 CC Switch 同步的 157 筆。
+///
+/// 分成兩個檔案不是為了美觀：`presets.rs` 的每一筆都是人工挑選並在
+/// 2026-09-30 實測過的，`presets_cc.rs` 是 2026-10-19 從上游同步後批次實測的，
+/// 來源與維護方式不同，混在一起會讓「哪一筆是誰加的」說不清楚。
+fn rows() -> impl Iterator<Item = &'static Row> {
+    TABLE.iter().chain(crate::presets_cc::CC_TABLE.iter())
+}
+
 /// 全部預設（前端「從預設開始」清單）。
 #[tauri::command]
 pub fn presets_list() -> Vec<Preset> {
-    TABLE
-        .iter()
+    rows()
         .map(|(id, name, base_url, api_format, auth_scheme, note)| Preset {
             id,
             name,
@@ -135,11 +166,13 @@ mod tests {
     use super::*;
 
     /// id 是前端的鍵，重複會讓「選了卻填錯」。
+    ///
+    /// 兩張表合起來一起驗：`presets_cc.rs` 是產生的，最容易撞名。
     #[test]
     fn preset_ids_are_unique() {
-        let mut ids: Vec<&str> = TABLE.iter().map(|p| p.0).collect();
-        ids.sort_unstable();
+        let mut ids: Vec<&str> = rows().map(|p| p.0).collect();
         let n = ids.len();
+        ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), n, "預設 id 有重複");
     }
@@ -157,7 +190,8 @@ mod tests {
             "auto",
         ];
         const SCHEMES: [&str; 3] = ["bearer", "goog-key", "anthropic"];
-        for (id, name, base_url, api_format, auth_scheme, _note) in TABLE {
+        let all: Vec<&Row> = rows().collect();
+        for (id, name, base_url, api_format, auth_scheme, _note) in all.iter().copied() {
             assert!(!id.trim().is_empty(), "id 不可為空");
             assert!(!name.trim().is_empty(), "{id}：名稱不可為空");
             assert!(
@@ -165,9 +199,13 @@ mod tests {
                 "{id}：base_url 必須是 https（或 localhost 的本機服務）：{base_url}"
             );
             assert!(!base_url.ends_with('/'), "{id}：base_url 結尾不該有斜線");
-            assert!(FORMATS.contains(&api_format), "{id}：未知協議 {api_format}");
-            assert!(SCHEMES.contains(&auth_scheme), "{id}：未知鑑權 {auth_scheme}");
-            assert_eq!(TABLE.iter().filter(|p| p.0 == id).count(), 1, "{id} 重複");
+            assert!(FORMATS.contains(api_format), "{id}：未知協議 {api_format}");
+            assert!(SCHEMES.contains(auth_scheme), "{id}：未知鑑權 {auth_scheme}");
+            assert_eq!(
+                all.iter().filter(|p| p.0 == *id).count(),
+                1,
+                "{id} 重複"
+            );
         }
     }
 
@@ -175,7 +213,8 @@ mod tests {
     #[test]
     fn list_is_serializable_and_complete() {
         let list = presets_list();
-        assert_eq!(list.len(), TABLE.len());
+        assert_eq!(list.len(), rows().count());
+        assert_eq!(list.len(), TABLE.len() + crate::presets_cc::CC_TABLE.len());
         assert!(list.iter().all(|p| p.app_type == "universal"));
         let json = serde_json::to_string(&list).unwrap();
         assert!(json.contains("\"openai\""));

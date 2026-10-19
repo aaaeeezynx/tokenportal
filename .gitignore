@@ -17,6 +17,11 @@
 # OpenAI Codex 上游原始碼（git clone，自帶 .git，非本專案）
 /codex/
 
+# CC Switch 的預設集／配額原始碼，用來同步 `presets_cc.rs` 與用量樣板。
+# 只放「下載回來的參考檔與解析腳本」，重新同步時可整包刪掉重跑。
+# 版權屬 farion1231/cc-switch（MIT）；本專案只取資料、不複製其程式碼。
+/.ccswitch-ref/
+
 # ── 設計資產歷史版本（只保留最終入選版；入選版在 src-tauri/icons/）──
 /icon-lab/
 /logo-previews/
