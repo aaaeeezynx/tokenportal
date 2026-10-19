@@ -26,7 +26,7 @@ Token Portal 在本機 (`127.0.0.1`) 開一個 OpenAI／Anthropic／Gemini 兼�
 
 ```text
 .
-├── token-gateway/            # 應用程式本體（Tauri 2）
+├── app/                      # 應用程式本體（Tauri 2）
 │   ├── src/                  #   React + TypeScript 前端（6 個主頁籤）
 │   ├── src-tauri/            #   Rust 後端（網關、計量、接管、SQLite）
 │   │   ├── src/proxy/        #     HTTP 代理與協議轉換
@@ -40,7 +40,7 @@ Token Portal 在本機 (`127.0.0.1`) 開一個 OpenAI／Anthropic／Gemini 兼�
 
 | 目錄 | 內容 |
 |---|---|
-| [`token-gateway/`](./token-gateway) | **應用程式本體**。建置、執行、打包都在這裡 |
+| [`app/`](./app) | **應用程式本體**。建置、執行、打包都在這裡 |
 | [`docs/`](./docs) | 開發紀錄：[`TESTING.md`](./docs/TESTING.md)（每個功能的設計與實機驗證）、[`evidence/`](./docs/evidence)（幾次事故的排錯證據） |
 | [`scripts/`](./scripts) | 開發期間用的診斷腳本，非執行期程式碼 |
 | [`CHANGELOG.md`](./CHANGELOG.md) | 各版本變更紀錄 |
@@ -59,43 +59,43 @@ Token Portal 在本機 (`127.0.0.1`) 開一個 OpenAI／Anthropic／Gemini 兼�
 
 貢獻日曆、Token 趨勢、成本趨勢，7 張統計卡一眼看完。
 
-![用量總覽](token-gateway/docs/screenshots/01-usage-overview.png)
+![用量總覽](app/docs/screenshots/01-usage-overview.png)
 
 ### 用量 → 工具視角
 
 分工具的堆疊柱狀圖，滑過去看該時間桶的請求數、費用與各工具佔比。
 
-![工具視角](token-gateway/docs/screenshots/02-usage-by-tool.png)
+![工具視角](app/docs/screenshots/02-usage-by-tool.png)
 
 ### 上游來源
 
 多個上游聚合成一個端點，各自獨立金鑰、協議、模型目錄與定價。
 
-![上游來源](token-gateway/docs/screenshots/03-providers.png)
+![上游來源](app/docs/screenshots/03-providers.png)
 
 ### 本地 Key
 
 按工具簽發 `sk-local-…`，各自配額、限流（QPM）、模型白名單。
 
-![本地 Key](token-gateway/docs/screenshots/04-local-keys.png)
+![本地 Key](app/docs/screenshots/04-local-keys.png)
 
 ### 診斷中心
 
 來源健康、斷路器狀態、協議記憶、歷史回填，全部看得見。
 
-![診斷中心](token-gateway/docs/screenshots/05-diagnostics.png)
+![診斷中心](app/docs/screenshots/05-diagnostics.png)
 
 ### 試算比價
 
 按量 vs 訂閱，閒聊／程式／長文三種場景比價。
 
-![試算比價](token-gateway/docs/screenshots/06-calc.png)
+![試算比價](app/docs/screenshots/06-calc.png)
 
 ### 設定
 
 網關埠（預設 15722）、外觀 Accent、開機自啟、語言。
 
-![設定](token-gateway/docs/screenshots/07-settings.png)
+![設定](app/docs/screenshots/07-settings.png)
 
 ---
 

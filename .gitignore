@@ -1,13 +1,13 @@
 # ══════════════════════════════════════════════════════════════════
-#  Token Gateway workspace — Git 忽略規則
+#  Token Portal workspace — Git 忽略規則
 #  原則：只追蹤「原始碼與文件」；建置產物、外部 clone、設計資產歷史版本一律排除。
 # ══════════════════════════════════════════════════════════════════
 
 # ── 建置產物（可重建，約 29 GB / 0.43 GB）────────────────────────
-/token-gateway/src-tauri/target/
-/token-gateway/node_modules/
-/token-gateway/dist/
-/token-gateway/dist-ssr/
+/app/src-tauri/target/
+/app/node_modules/
+/app/dist/
+/app/dist-ssr/
 *.tsbuildinfo
 
 # ── 離線快照（避免自我遞迴）─────────────────────────────────────
@@ -20,11 +20,11 @@
 # ── 設計資產歷史版本（只保留最終入選版；入選版在 src-tauri/icons/）──
 /icon-lab/
 /logo-previews/
-/token-gateway/src-tauri/icons/concepts/
+/app/src-tauri/icons/concepts/
 
 # ── 日誌與暫存 ─────────────────────────────────────────────────
 *.log
-/token-gateway/*.tmp
+/app/*.tmp
 
 # ── Python 暫存 ────────────────────────────────────────────────
 __pycache__/

@@ -15,8 +15,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CONSTS = ROOT / "token-gateway" / "src-tauri" / "src" / "tools" / "consts.rs"
-LOGOS = ROOT / "token-gateway" / "src" / "components" / "logos.tsx"
+CONSTS = ROOT / "app" / "src-tauri" / "src" / "tools" / "consts.rs"
+LOGOS = ROOT / "app" / "src" / "components" / "logos.tsx"
 
 
 def parse_backend() -> list[tuple[str, str]]:
