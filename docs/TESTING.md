@@ -1154,6 +1154,98 @@ Desktop 送 claude-sonnet-5
 
 ---
 
+### 0.9.48 四協議雙向轉換：補上最後一格 Anthropic → Gemini（2026-10-20）
+
+#### 使用者要求
+
+> 7.支持四種協議雙向格式轉換
+
+#### 先盤點：其實已經完成 5/6 格
+
+原本以為「Gemini 雙向鎖死」要大改。逐格核對 `proxy/matrix.rs` 後發現
+`ChatToGemini`（2026-10-11）與 `ResponsesToGemini` 早已實作 —— README 的
+相容性矩陣是舊的。真正的缺口只剩一格：
+
+| 入站 → 渠道 | 狀態 |
+|---|---|
+| Anthropic → Chat | ✅ |
+| Chat → Anthropic | ✅（2026-10-10） |
+| Chat → Gemini | ✅（2026-10-11） |
+| Responses → Gemini | ✅（2026-10-11，兩跳） |
+| Responses → Anthropic | ✅（2026-10-10，兩跳） |
+| **Anthropic → Gemini** | ❌ → ✅（本輪） |
+
+這格是「**Claude Code 用 Gemini-only 模型**」的唯一路徑 —— 實測 opencode-go 的
+`gemini-4-argon-contributor` 只吃原生 gemini，chat／responses／anthropic 全回
+`400 ModelProtocolUnsupported`。補上之後「三種客戶端 × 四種上游」全部可達。
+
+#### 實作：全部是既有零件的組合，沒有新翻譯器
+
+| 階段 | 做法 | 零件來源 |
+|---|---|---|
+| 請求 | `anthropic_to_openai` → `chat_to_gemini` | 兩者皆既有 |
+| 回應（非串流） | `gemini_to_chat_resp` → `openai_to_anthropic` | 兩者皆既有 |
+| 回應（串流） | `gemini_chunk_to_chat_chunks` → `openai_chunk_to_anthropic` | 兩者皆既有 |
+
+改動點：`matrix.rs`（enum + `as_str` + 矩陣格）、`forward.rs`（請求兩跳）、
+`finish.rs`／`finish_sse.rs`（串流分支）、`finish_convert.rs`（非串流兩跳）、
+`util.rs`（`should_inject_usage`：Gemini 端點不收 `stream_options`）。
+
+#### 順手修掉兩個既存的行數超標（400 行上限）
+
+| 檔案 | 之前 | 之後 | 抽出什麼 |
+|---|---|---|---|
+| `finish.rs` | 468 | **149** | 串流分派 → `finish_sse.rs`（347）、非串流轉換 → `finish_convert.rs`（183，**純函式可測**） |
+| `forward.rs` | 441 | **365** | 模型來源解析 → `forward_route.rs`（86） |
+
+抽出來的東西不是搬位置而已：`finish_convert.rs` 把「兩跳的第二段」變成
+**可逐格測試的純函式**（上游是不是 Gemini／Anthropic、客戶端是不是
+Responses／Chat，三向互斥都有斷言）—— 以前埋在 400 行的函式裡只能靠實機。
+
+另外 `proxy.rs` 475 行是**既存超標**（HEAD 時 447），本輪未處理。
+
+#### 測試
+
+`proxy/tests/matrix.rs` 的 30 格固定樁更新：新增 `A2G` 常量、
+`(Anthropic, T::Gemini)` 由 `None` 改 `A2G`、
+`matrix_preserves_original_error_messages` 那格由 `unwrap_err` 改 `unwrap`
+（原本釘的是「anthropic 入站訊息優先於 gemini 渠道訊息」的分支順序，
+那個順序本身沒問題，只是這格從錯誤變成可用）。
+`finish_convert.rs` 另有 6 個測試（含 `anthropic_to_gemini_is_two_hop_to_anthropic`）。
+
+#### 實機驗證（對真實的 opencode-go 與 `gemini-4-argon-contributor`）
+
+先直接探測上游確認事實：gemini 原生 **200**，chat／responses／anthropic 全
+`400 ModelProtocolUnsupported`（缺 `x-opencode-session` 時是 400 MissingSessionID，
+不帶瀏覽器 UA 是 Cloudflare 403 error 1010 —— 兩者都不是「協議不支援」）。
+
+| 路徑 | 結果 |
+|---|---|
+| **Anthropic → Gemini（本輪新增）** | ✅ HTTP 200（9.9s）、`type=message`、`content=[{type:text,text:"Hello."}]`、usage 三欄齊全 |
+| 同上**串流** | ✅ HTTP 200、`content-type=text/event-stream`、完整 Anthropic 事件序列（message_start → content_block_start → content_block_delta×2 → content_block_stop → message_delta → message_stop），文字正確串成 "1, 2, 3" |
+| **Responses → Gemini（使用者實際失敗的那條）** | ✅ HTTP 200（5.7s）、標準 Responses 形狀（`object:response`、`output[].content[].type=output_text`） |
+
+#### 附帶發現：10-18 的失敗 trace 讀完後的結論
+
+使用者回報的兩個錯誤（`/v1/responses` 404、與 Gemini 模型無法對話）在
+`proxy_trace` 裡都有紀錄（10-18，`app=codex`、`kind=responses_to_gemini`）：
+**路由與翻譯當時就是對的**，失敗是上游回 `400` 且 **body 為空**
+（`upstream_body: ""`，dumps 有存檔）。同樣的請求今天回 200 ——
+屬上游端已恢復，不是本專案的缺陷。404 那筆在 `proxy.rs:374` 本來就會
+換手（404／405 ＝ 路徑不存在 → 換下一個候選），行為正確。
+
+#### 閘門
+
+| 項目 | 結果 |
+|---|---|
+| `cargo test --offline --lib` | **454 passed / 0 failed / 17 ignored** ✅ |
+| `cargo clippy --offline --all-targets` | **0 warning** ✅ |
+| `pnpm exec tsc --noEmit` | exit 0 ✅ |
+| `pnpm exec tauri build` | exit 0 ✅ |
+| 行數 | 本輪新增／改動的 8 個檔案全部 ≤400 ✅（`proxy.rs` 475 為既存） |
+
+---
+
 ### 0.9.41 品牌更名：Token Gateway → Token Toll（2026-10-04）
 
 #### 使用者要求

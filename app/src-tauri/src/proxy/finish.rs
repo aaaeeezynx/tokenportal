@@ -3,6 +3,9 @@
 use super::*;
 use crate::translate::SseUsage;
 
+use finish_convert;
+use finish_sse;
+
 /// 回應收尾階段所需的請求脈絡。
 ///
 /// 共用的 4 個欄位（`ctx`／`started`／`app`／`model_raw`）來自 [`ReqCtx`]；
@@ -72,259 +75,9 @@ pub(super) async fn finish_response(upstream: reqwest::Response, f: &FinishCtx<'
     };
 
     if is_sse {
-        // 流式：邊轉邊解析，結束寫日誌（翻譯分支按 kind 轉換事件形狀）
-        let (tx, rx) =
-            tokio::sync::mpsc::channel::<Result<axum::body::Bytes, axum::Error>>(64);
-        if f.kind == TransKind::ResponsesToGemini {
-            // Gemini 上游 → Codex：Gemini chunk → Chat chunk → Responses 事件
-            let appv = f.req.app.to_string();
-            let echo = f.req.model_raw.to_string();
-            let logm = log_fallback.clone();
-            let customs = custom_tools.clone();
-            tokio::spawn(async move {
-                let on_line = |s: &mut ResponsesFromGeminiRelay, t: &str| {
-                    gemini_line_to_responses(t, s, &echo, &customs)
-                };
-                let on_finish = |s: &mut ResponsesFromGeminiRelay| {
-                    crate::translate::responses_stream_finish(
-                        &mut s.tstate,
-                        &echo,
-                        &s.acc,
-                        &customs,
-                    )
-                };
-                let st = relay_sse(
-                    upstream,
-                    &tx,
-                    ResponsesFromGeminiRelay::default(),
-                    on_line,
-                    on_finish,
-                )
-                .await;
-                StreamLog::new(
-                    &db_path,
-                    &appv,
-                    provider_id,
-                    key_id,
-                    latency_ms,
-                    status.as_u16(),
-                )
-                .write(&logm, &st.acc);
-            });
-            return sse_response(builder, rx);
-        }
-        if f.kind == TransKind::ChatToGemini {
-            // Gemini 上游 → Chat 客戶端。Gemini 沒有 [DONE]，由 on_finish 補。
-            let appv = f.req.app.to_string();
-            let logm = log_fallback.clone();
-            tokio::spawn(async move {
-                let on_line = |s: &mut ChatFromGeminiRelay, t: &str| {
-                    gemini_line_to_chat(t, s)
-                };
-                let on_finish = |_s: &mut ChatFromGeminiRelay| {
-                    vec!["data: [DONE]\n\n".to_string()]
-                };
-                let st = relay_sse(
-                    upstream,
-                    &tx,
-                    ChatFromGeminiRelay::default(),
-                    on_line,
-                    on_finish,
-                )
-                .await;
-                StreamLog::new(
-                    &db_path,
-                    &appv,
-                    provider_id,
-                    key_id,
-                    latency_ms,
-                    status.as_u16(),
-                )
-                .write(&logm, &st.acc);
-            });
-            return sse_response(builder, rx);
-        }
-        if f.kind == TransKind::ResponsesToAnthropic {
-            // Anthropic 上游 → Codex：Anthropic 事件 → Chat chunk → Responses 事件
-            let appv = f.req.app.to_string();
-            let echo = f.req.model_raw.to_string();
-            let logm = log_fallback.clone();
-            let customs = custom_tools.clone();
-            tokio::spawn(async move {
-                let on_line = |s: &mut ResponsesFromAnthropicRelay, t: &str| {
-                    anthropic_line_to_responses(t, s, &echo, &customs)
-                };
-                let on_finish = |s: &mut ResponsesFromAnthropicRelay| {
-                    crate::translate::responses_stream_finish(
-                        &mut s.tstate,
-                        &echo,
-                        &s.acc,
-                        &customs,
-                    )
-                };
-                let st = relay_sse(
-                    upstream,
-                    &tx,
-                    ResponsesFromAnthropicRelay::default(),
-                    on_line,
-                    on_finish,
-                )
-                .await;
-                StreamLog::new(
-                    &db_path,
-                    &appv,
-                    provider_id,
-                    key_id,
-                    latency_ms,
-                    status.as_u16(),
-                )
-                .write(&logm, &st.acc);
-            });
-            return sse_response(builder, rx);
-        }
-        if f.kind == TransKind::ChatToAnthropic {
-            // Anthropic 上游 → Chat 客戶端
-            let appv = f.req.app.to_string();
-            let logm = log_fallback.clone();
-            tokio::spawn(async move {
-                let on_line = |s: &mut ChatToAnthropicRelay, t: &str| {
-                    anthropic_line_to_chat(t, &mut s.astate, &mut s.acc)
-                };
-                let on_finish = |_s: &mut ChatToAnthropicRelay| Vec::new();
-                let st = relay_sse(
-                    upstream,
-                    &tx,
-                    ChatToAnthropicRelay::default(),
-                    on_line,
-                    on_finish,
-                )
-                .await;
-                StreamLog::new(
-                    &db_path,
-                    &appv,
-                    provider_id,
-                    key_id,
-                    latency_ms,
-                    status.as_u16(),
-                )
-                .write(&logm, &st.acc);
-            });
-            return sse_response(builder, rx);
-        }
-        if f.kind == TransKind::ResponsesToChat {
-            // Responses 流式：chat chunk → Responses 事件；流結束補發 completed/failed
-            let appv = f.req.app.to_string();
-            let echo = f.req.model_raw.to_string();
-            let logm = log_fallback.clone();
-            let customs = custom_tools.clone();
-            tokio::spawn(async move {
-                let on_line = |s: &mut ResponsesRelay, t: &str| {
-                    responses_line_events(t, &mut s.tstate, &echo, &mut s.acc, &customs)
-                };
-                let on_finish = |s: &mut ResponsesRelay| {
-                    crate::translate::responses_stream_finish(
-                        &mut s.tstate,
-                        &echo,
-                        &s.acc,
-                        &customs,
-                    )
-                };
-                let st =
-                    relay_sse(upstream, &tx, ResponsesRelay::default(), on_line, on_finish)
-                        .await;
-                StreamLog::new(
-                    &db_path,
-                    &appv,
-                    provider_id,
-                    key_id,
-                    latency_ms,
-                    status.as_u16(),
-                )
-                .write(&logm, &st.acc);
-            });
-            return sse_response(builder, rx);
-        }
-        if f.translated {
-            let appv = f.req.app.to_string();
-            let echo = f.req.model_raw.to_string();
-            let logm = log_fallback.clone();
-            tokio::spawn(async move {
-                let on_line = |s: &mut AnthropicRelay, t: &str| {
-                    let Some(d) = t.strip_prefix("data:") else {
-                        return (vec![], false);
-                    };
-                    let d = d.trim_start();
-                    if d.is_empty() || d == "[DONE]" {
-                        return (vec![], false);
-                    }
-                    let Ok(v) = serde_json::from_str::<serde_json::Value>(d) else {
-                        return (vec![], false);
-                    };
-                    // 上游錯誤 → Anthropic error 事件並收流
-                    if let Some(err) = v.get("error") {
-                        let err = if err.is_null() { v.clone() } else { err.clone() };
-                        return (vec![crate::translate::anthropic_error_line(&err)], true);
-                    }
-                    (
-                        crate::translate::openai_chunk_to_anthropic(
-                            &mut s.tstate,
-                            &v,
-                            &echo,
-                            &mut s.acc,
-                        ),
-                        false,
-                    )
-                };
-                let on_finish = |_s: &mut AnthropicRelay| Vec::new();
-                let st =
-                    relay_sse(upstream, &tx, AnthropicRelay::default(), on_line, on_finish)
-                        .await;
-                StreamLog::new(
-                    &db_path,
-                    &appv,
-                    provider_id,
-                    key_id,
-                    latency_ms,
-                    status.as_u16(),
-                )
-                .write(&logm, &st.acc);
-            });
-            return sse_response(builder, rx);
-        }
-        let appv = f.req.app.to_string();
-        let mr = f.req.model_raw.to_string();
-        tokio::spawn(async move {
-            let mut acc = SseAcc::new();
-            let mut stream = upstream.bytes_stream();
-            use tokio_stream::StreamExt;
-            while let Some(item) = stream.next().await {
-                match item {
-                    Ok(chunk) => {
-                        acc.feed(&chunk);
-                        if tx.send(Ok(chunk)).await.is_err() {
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        let _ = tx.send(Err(axum::Error::new(e))).await;
-                        break;
-                    }
-                }
-            }
-            acc.finish();
-            let u = acc.usage;
-            let model = u.model.clone().unwrap_or(mr);
-            StreamLog::new(
-                &db_path,
-                &appv,
-                provider_id,
-                key_id,
-                latency_ms,
-                status.as_u16(),
-            )
-            .write(&model, &u);
-        });
-        return sse_response(builder, rx);
+        return finish_sse::dispatch_sse(
+            upstream, builder, f, status, latency_ms, log_fallback, custom_tools,
+        );
     }
 
     // 非流式：整包解析後轉發（翻譯分支轉成 Anthropic message）
@@ -345,29 +98,17 @@ pub(super) async fn finish_response(upstream: reqwest::Response, f: &FinishCtx<'
     let mut out_bytes = resp_bytes.to_vec();
     if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&resp_bytes) {
         extract_usage(&v, &mut usage);
-        // 僅成功狀態才轉換形狀；錯誤回包原樣透出（客戶端按狀態碼讀錯誤）
+        // 僅成功狀態才轉換形狀；錯誤回包原樣透出（客戶端按狀態碼讀錯誤）。
+        // 轉換本身抽到 `finish_convert`（純函式，兩跳的第二段在那裡可測）。
         if f.translated && status.is_success() {
-            // Anthropic 上游：先翻成 Chat，再翻成客戶端格式（兩跳的第二段）
-            // 非 Chat 上游（Anthropic／Gemini）：先翻成 Chat，再翻成客戶端格式
-            let chat = match f.kind {
-                TransKind::ChatToAnthropic | TransKind::ResponsesToAnthropic => {
-                    crate::translate::anthropic_to_chat_resp(&v, f.req.model_raw)
-                }
-                TransKind::ChatToGemini | TransKind::ResponsesToGemini => {
-                    crate::translate::gemini_to_chat_resp(&v, f.req.model_raw)
-                }
-                _ => v.clone(),
-            };
-            let r = match f.kind {
-                TransKind::ResponsesToChat
-                | TransKind::ResponsesToAnthropic
-                | TransKind::ResponsesToGemini => {
-                    crate::translate::openai_to_responses(&chat, f.req.model_raw, &custom_tools)
-                }
-                TransKind::ChatToAnthropic | TransKind::ChatToGemini => chat,
-                _ => crate::translate::openai_to_anthropic(&chat, f.req.model_raw),
-            };
-            out_bytes = serde_json::to_vec(&r).unwrap_or(out_bytes);
+            if let Some(r) = finish_convert::convert_body(
+                f.kind,
+                &v,
+                f.req.model_raw,
+                &custom_tools,
+            ) {
+                out_bytes = serde_json::to_vec(&r).unwrap_or(out_bytes);
+            }
         }
     }
     let model = usage.model.clone().unwrap_or(log_fallback);

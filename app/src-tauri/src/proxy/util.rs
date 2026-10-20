@@ -269,7 +269,9 @@ pub(super) fn should_inject_usage(kind: TransKind, incoming_path: &str) -> bool 
         TransKind::ChatToAnthropic
         | TransKind::ResponsesToAnthropic
         | TransKind::ChatToGemini
-        | TransKind::ResponsesToGemini => false,
+        | TransKind::ResponsesToGemini
+        // Anthropic 入站 → Gemini 上游：送出去的是 Gemini 形狀，也不要
+        | TransKind::AnthropicToGemini => false,
         // 直通：看客戶端打的是哪個端點
         TransKind::None => incoming_path.contains("/chat/completions"),
     }

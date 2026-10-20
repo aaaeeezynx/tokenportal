@@ -369,3 +369,13 @@ pub(super) struct ResponsesFromGeminiRelay {
     pub(super) tstate: crate::translate::ResponsesStreamState,
     pub(super) acc: SseUsage,
 }
+/// Gemini **上游** → Anthropic 客戶端（Claude Code，2026-10-20）。
+///
+/// 兩跳的第二段：Gemini chunk → Chat chunk（`gstate`）→ Anthropic 事件（`astate`）。
+/// 刻意重用既有的兩個轉換器，不另寫一份 Gemini ⇄ Anthropic —— 那會是第三套語意。
+#[derive(Default)]
+pub(super) struct AnthropicFromGeminiRelay {
+    pub(super) gstate: crate::translate::GeminiToChatState,
+    pub(super) astate: crate::translate::AnthropicStreamState,
+    pub(super) acc: SseUsage,
+}

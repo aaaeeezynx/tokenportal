@@ -50,9 +50,12 @@ mod util;
 mod logging;
 mod stream;
 mod forward;
+mod forward_route;
 mod retry;
 mod dump;
 mod finish;
+mod finish_convert;
+mod finish_sse;
 mod pipeline;
 mod reqctx;
 mod failover;
@@ -66,10 +69,11 @@ mod queue;
 use {
     finish::{finish_response, FinishCtx},
     forward::{
-        build_upstream_target, provider_name, resolve_model_provider, resolve_model_providers,
+        build_upstream_target,
         strip_for_upstream, strip_leading_version, translate_forward_body, BodyPrep, ForwardBody,
         ReroutedProvider, TransSpec,
     },
+    forward_route::{provider_name, resolve_model_provider, resolve_model_providers},
     failover::{learn_format, learned_format, plan_attempts, Attempt},
     health::order_by_health,
     logging::{err_json, extract_usage, insert_log, log_reject, reject, SseAcc},
@@ -82,8 +86,8 @@ use {
     stream::{
         anthropic_line_to_chat, anthropic_line_to_responses, gemini_line_to_chat,
         gemini_line_to_responses, relay_sse, responses_line_events,
-        sse_response, AnthropicRelay, ChatFromGeminiRelay, ChatToAnthropicRelay,
-        ResponsesFromAnthropicRelay, ResponsesFromGeminiRelay,
+        sse_response, AnthropicFromGeminiRelay, AnthropicRelay, ChatFromGeminiRelay,
+        ChatToAnthropicRelay, ResponsesFromAnthropicRelay, ResponsesFromGeminiRelay,
         ResponsesRelay, StreamLog,
     },
     strip::{

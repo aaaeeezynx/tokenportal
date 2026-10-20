@@ -23,6 +23,15 @@ pub(super) enum TransKind {
     /// Responses（Codex）請求 → Gemini 上游。同樣是兩跳：
     /// `responses_to_openai` 再接 `chat_to_gemini`。
     ResponsesToGemini,
+    /// Anthropic（Claude Code）請求 → Gemini 上游（2026-10-20）。
+    ///
+    /// 補上這格之後，「三種客戶端 × 四種上游」全部可達 —— 剩下的
+    /// `Gemini 入站` 是刻意鎖死的（沒有 Gemini 原生客戶端在用）。
+    ///
+    /// 請求側兩跳：`anthropic_to_openai` 再接 `chat_to_gemini`。
+    /// 回應側兩跳：`gemini_chunk_to_chat_chunks` 再接 `openai_chunk_to_anthropic`
+    /// （串流與非串流各一條，都是既有零件）。
+    AnthropicToGemini,
 }
 
 impl TransKind {
@@ -35,6 +44,7 @@ impl TransKind {
             TransKind::ResponsesToAnthropic => "responses_to_anthropic",
             TransKind::ChatToGemini => "chat_to_gemini",
             TransKind::ResponsesToGemini => "responses_to_gemini",
+            TransKind::AnthropicToGemini => "anthropic_to_gemini",
         }
     }
 }
@@ -181,9 +191,15 @@ pub(super) fn resolve_trans_kind(in_fmt: InFmt, target: TargetFmt) -> Result<Tra
         // ── Anthropic 入站 ──
         (Anthropic, T::Anthropic) => Ok(TransKind::None),
         (Anthropic, T::OpenAiChat) | (Anthropic, T::Mixed) => Ok(TransKind::AnthropicToChat),
-        (Anthropic, T::OpenAiResponses)
-        | (Anthropic, T::Gemini)
-        | (Anthropic, T::Unknown) => Err(E_ANTHROPIC_UNSUPPORTED),
+        // 2026-10-20：Gemini 上游也能接了。請求 anthropic_to_openai → chat_to_gemini，
+        // 回應 gemini_chunk_to_chat_chunks → openai_chunk_to_anthropic（都是既有零件）。
+        // 這格是「Claude Code 用 Gemini-only 模型」的唯一路徑（實測 opencode-go 的
+        // gemini-4-argon-contributor 只吃原生 gemini，chat/responses/anthropic 全 400
+        // ModelProtocolUnsupported）。
+        (Anthropic, T::Gemini) => Ok(TransKind::AnthropicToGemini),
+        (Anthropic, T::OpenAiResponses) | (Anthropic, T::Unknown) => {
+            Err(E_ANTHROPIC_UNSUPPORTED)
+        }
         (Anthropic, T::Auto) => Err(E_AUTO_UNRESOLVED),
 
         // ── Responses 入站（Codex）──

@@ -150,82 +150,6 @@ pub(super) fn build_upstream_target(
     // 注：X-TG-App 是網關內務頭，如需隱藏可在此剝離；當前選擇透傳以便上游觀測。
     (url, fwd)
 }
-/// 取渠道顯示名（僅用於錯誤訊息；查不到時給可讀的佔位字串）。
-pub(super) fn provider_name(conn: &rusqlite::Connection, provider_id: i64) -> String {
-    conn.query_row("SELECT name FROM providers WHERE id=?1", [provider_id], |r| {
-        r.get(0)
-    })
-    .unwrap_or_else(|_| "（未知來源）".to_string())
-}
-/// 跨來源模型路由：在其他啟用來源的可用模型表中找 display/actual 命中
-///（排除 Key 綁定來源，按來源優先級、id 取第一個）。
-pub(super) fn resolve_model_provider(
-    conn: &rusqlite::Connection,
-    model: &str,
-    exclude_pid: i64,
-) -> Option<ReroutedProvider> {
-    conn.query_row(
-        "SELECT p.id, p.base_url, p.api_key, p.auth_scheme, p.api_format, m.protocol,
-                p.protocol_prefixes
-         FROM provider_models m JOIN providers p ON p.id = m.provider_id
-         WHERE m.enabled = 1 AND p.enabled = 1 AND p.id != ?2
-           AND (lower(m.display_name) = lower(?1) OR lower(m.actual_model) = lower(?1))
-         ORDER BY p.priority ASC, p.id ASC LIMIT 1",
-        rusqlite::params![model, exclude_pid],
-        |r| {
-            Ok(ReroutedProvider {
-                id: r.get(0)?,
-                base_url: r.get(1)?,
-                api_key: r.get(2)?,
-                scheme: r.get(3)?,
-                format: r.get(4)?,
-                protocol: r.get(5)?,
-                prefixes: r.get(6)?,
-            })
-        },
-    )
-    .ok()
-}
-/// 跨來源模型路由（**多候選**版）：其他啟用來源中登記了同一個模型的全部來源，
-/// 依來源優先級排序（同一來源只出現一次）。
-///
-/// `resolve_model_provider` 取第一名；這裡取整條佇列，讓 `failover.rs` 在第一名
-/// 失敗（連不上、5xx、協議不支援）時還能往下換 —— 這是 cc-switch「failover queue」
-/// 的精神。失敗換手只發生在**已經決定要轉發**之後，白名單與直連語意不變。
-pub(super) fn resolve_model_providers(
-    conn: &rusqlite::Connection,
-    model: &str,
-    exclude_pid: i64,
-) -> Vec<ReroutedProvider> {
-    let mut stmt = match conn.prepare(
-        "SELECT p.id, p.base_url, p.api_key, p.auth_scheme, p.api_format, m.protocol,
-                p.protocol_prefixes
-         FROM provider_models m JOIN providers p ON p.id = m.provider_id
-         WHERE m.enabled = 1 AND p.enabled = 1 AND p.id != ?2
-           AND (lower(m.display_name) = lower(?1) OR lower(m.actual_model) = lower(?1))
-         GROUP BY p.id
-         ORDER BY p.priority ASC, p.id ASC",
-    ) {
-        Ok(s) => s,
-        Err(_) => return Vec::new(),
-    };
-    let rows = stmt.query_map(rusqlite::params![model, exclude_pid], |r| {
-        Ok(ReroutedProvider {
-            id: r.get(0)?,
-            base_url: r.get(1)?,
-            api_key: r.get(2)?,
-            scheme: r.get(3)?,
-            format: r.get(4)?,
-            protocol: r.get(5)?,
-            prefixes: r.get(6)?,
-        })
-    });
-    match rows {
-        Ok(it) => it.filter_map(Result::ok).collect(),
-        Err(_) => Vec::new(),
-    }
-}
-/// 翻譯決策（矩陣判定結果中，翻譯階段真正需要的部分）。
 #[derive(Debug, Clone, Copy)]
 pub(super) struct TransSpec {
     pub(super) kind: TransKind,
@@ -305,6 +229,15 @@ pub(super) fn translate_forward_body(
             }
             TransKind::ChatToGemini => {
                 let (body, path) = crate::translate::chat_to_gemini(&v, &actual, &allowed);
+                translated_path = Some(path);
+                body
+            }
+            // Anthropic（Claude Code）→ Gemini 上游：同樣兩跳。
+            // 先轉成 Chat 再轉 Gemini —— 刻意不寫第三份「Anthropic ⇄ Gemini」
+            // 的直接翻譯，那會變成要維護第三套語意。
+            TransKind::AnthropicToGemini => {
+                let chat = crate::translate::anthropic_to_openai(&v, &actual);
+                let (body, path) = crate::translate::chat_to_gemini(&chat, &actual, &allowed);
                 translated_path = Some(path);
                 body
             }

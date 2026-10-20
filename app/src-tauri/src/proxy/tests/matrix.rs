@@ -39,6 +39,8 @@
     // 2026-10-11 補的 Gemini 反向
     const C2G: Option<TransKind> = Some(TransKind::ChatToGemini);
     const R2G: Option<TransKind> = Some(TransKind::ResponsesToGemini);
+    // 2026-10-20 補的 Anthropic → Gemini（Claude Code 用 Gemini-only 模型）
+    const A2G: Option<TransKind> = Some(TransKind::AnthropicToGemini);
         // 5 種入站 × 6 種渠道協議 = 30 格，全部明列。
         // 這份表就是行為契約：任何分支被重排或漏改，這裡立刻失敗。
         let table: &[(InFmt, T, Option<TransKind>)] = &[
@@ -47,7 +49,7 @@
             (Anthropic, T::OpenAiResponses, None),
             (Anthropic, T::Mixed, A2C),
             (Anthropic, T::Anthropic, NONE),
-            (Anthropic, T::Gemini, None),
+            (Anthropic, T::Gemini, A2G),
             (Anthropic, T::Unknown, None),
             // Responses 入站（Codex）
             (Responses, T::OpenAiChat, R2C),
@@ -108,10 +110,12 @@
             resolve_trans_kind(InFmt::Anthropic, TargetFmt::OpenAiResponses).unwrap_err(),
             E_ANTHROPIC_UNSUPPORTED
         );
-        // anthropic 入站的訊息優先於「gemini 渠道」訊息（原實作順序語義）
+        // 2026-10-20：Anthropic → Gemini 已實作，這格不再是 Err。
+        // （原本釘的是「anthropic 入站訊息優先於 gemini 渠道訊息」的分支順序；
+        //   那個順序本身沒問題，只是這一格從錯誤變成可用。）
         assert_eq!(
-            resolve_trans_kind(InFmt::Anthropic, TargetFmt::Gemini).unwrap_err(),
-            E_ANTHROPIC_UNSUPPORTED
+            resolve_trans_kind(InFmt::Anthropic, TargetFmt::Gemini).unwrap(),
+            TransKind::AnthropicToGemini
         );
         // 2026-10-10：反向翻譯器已實作，這兩格不再是 Err（見上一條矩陣斷言）
         assert_eq!(
