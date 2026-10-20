@@ -1246,6 +1246,84 @@ Responses／Chat，三向互斥都有斷言）—— 以前埋在 400 行的函�
 
 ---
 
+### 0.9.49 Rectifier：Thinking Signature 整流器（2026-10-20）
+
+#### 使用者要求
+
+> 1.Rectifier
+
+#### 解決什麼問題
+
+**多輪對話的第二次請求**：上游回應帶 thinking block（Anthropic）或
+`thoughtSignature`（Gemini），客戶端把歷史原樣送回來時，簽章可能過期／被改／
+不被這個渠道接受 → 上游 400，而且**每次續聊都失敗**。這正是使用者回報的
+「無法繼續對話」。
+
+#### 對標範圍（cc-switch 的 6 個檔案裡挑 2 個對齊）
+
+| cc-switch 模組 | 本專案 | 理由 |
+|---|---|---|
+| `thinking_rectifier.rs`（23 KB） | ✅ `proxy/rectifier.rs` | 核心：7 種錯誤模式 + 最小侵入修復 |
+| `thinking_budget_rectifier.rs`（11 KB） | ✅ **本來就有**（`retry.rs` 的 reasoning_effort 分支），本輪抽成 `retry_budget.rs` | 對齊命名與職責 |
+| `opaque_state_rectifier.rs`（34 KB） | ⚠️ 部分（Gemini 的 `thoughtSignature` 剝除） | 其餘是各家渠道的特殊狀態，需逐家實測 |
+| `media_sanitizer.rs`（43 KB） | ⬜ | 圖片回退需要逐家實測「哪個模型收圖」 |
+| `copilot_optimizer.rs`／`thinking_optimizer.rs` | ⬜ | 前者是 Copilot 專用；後者屬於收費優化，另案 |
+
+#### 7 種觸發模式（錯誤訊息比對，大小寫不敏感）
+
+1. `Invalid 'signature' in 'thinking' block`（Anthropic 原文）
+2. `Thought signature is not valid`（Gemini／第三方）
+3. `must start with a thinking block`
+4. `Expected thinking/redacted_thinking, but found tool_use`
+5. `signature: Field required`
+6. `signature: Extra inputs are not permitted`
+7. `invalid request`（兜底，與 CCH 對齊）
+
+修復動作（**最小侵入**）：移除 `messages[*].content` 的
+`thinking`／`redacted_thinking` block、清掉非 thinking block 上殘留的
+`signature`、Gemini 的 `contents[].parts[]` 剝 `thoughtSignature`；
+特定條件下移除頂層 `thinking`（開啟中 ＋ 最後一條 assistant 以 tool_use
+開頭卻無 thinking 前綴 —— Anthropic 的硬性要求）。
+
+#### 為什麼不記住（與 `provider_stripped_fields` 不同）
+
+剝欄位是「這個來源**永遠**不收這個欄位」—— 記住一次永久有效。
+簽章錯誤是「**這一次**的簽章壞了」—— 下一輪的新簽章可能是好的。
+記住會讓之後所有請求都盲目剝簽章，把有用的狀態丟掉。
+CC Switch 也不記住（每次錯誤現場修）。
+
+#### 接線位置
+
+`retry.rs::send_with_strip_retry`：在「協議不支援」判定之後、「剝欄位」之前
+插入整流分支（形狀與既有的 `encrypted_content` 分支一致）。
+順手把 `retry.rs` 的 reasoning-effort 分支抽成 `retry_budget.rs`
+（對標 CC Switch 的 `thinking_budget_rectifier` 命名）——
+`retry.rs` 因此從 415 行回到 334。
+
+#### 實機驗證（mock 上游 + 臨時來源，完整鏈路）
+
+起一個本地 mock 上游（有 `signature` 就回 400 簽章錯誤、沒有就回 200），
+臨時掛一個 `anthropic` 來源指向它，送多輪請求（歷史含 thinking + 壞簽章）：
+
+| 觀察 | 結果 |
+|---|---|
+| 第一次送達上游的 body | 含 `thinking` block ＋ `"signature":"BAD-SIG"` → 上游 400 ✅ |
+| **整流後重試**的 body | **只剩 `{"type":"text","text":"prev answer"}`**，thinking 與 signature 都沒了 ✅ |
+| 客戶端收到 | **HTTP 200**、`content = "rectified ok"`（97ms）|
+| `proxy_trace` | ✅「上游 400：簽章類錯誤，已移除歷史 thinking／簽章並重試」 |
+
+測試完已刪除臨時來源與模型（`remaining=0`），mock 已停。
+
+#### 閘門
+
+| 項目 | 結果 |
+|---|---|
+| `cargo test --offline --lib` | **463 passed / 0 failed / 17 ignored** ✅（+9 rectifier 測試） |
+| `cargo clippy --offline --all-targets` | **0 warning** ✅ |
+| 行數 | `rectifier.rs` 378、`retry.rs` 334、`retry_budget.rs` 92（皆 ≤400）✅ |
+
+---
+
 ### 0.9.41 品牌更名：Token Gateway → Token Toll（2026-10-04）
 
 #### 使用者要求

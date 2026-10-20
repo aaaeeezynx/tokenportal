@@ -61,6 +61,8 @@ mod reqctx;
 mod failover;
 mod health;
 mod queue;
+mod rectifier;
+mod retry_budget;
 
 // 子模組共用匯入：各子模組開頭的 `use super::*;` 會取得這裡的綁定，
 // 因此某個模組要用兄弟模組的項目時，只要在這裡補一行即可。
@@ -90,6 +92,8 @@ use {
         ChatToAnthropicRelay, ResponsesFromAnthropicRelay, ResponsesFromGeminiRelay,
         ResponsesRelay, StreamLog,
     },
+    rectifier::{is_signature_error, rectify},
+    retry_budget::retry_without_reasoning,
     strip::{
         is_encrypted_content_rejected, is_stateless, parse_body_json, parse_unknown_fields,
         sanitize_passthrough_chat_body, strip_encrypted_content, strip_json_field,
