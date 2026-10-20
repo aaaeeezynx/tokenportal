@@ -102,6 +102,33 @@ export interface ToolLatest {
   up_to_date: boolean | null;
 }
 
+/** 全部升級的單筆結果（後端 `tools::versions::UpdateOutcome`）。 */
+export interface ToolUpdateOutcome {
+  app: string;
+  display: string;
+  /** 這次有沒有真的跑更新（已是最新或未安裝 → false） */
+  ran: boolean;
+  ok: boolean;
+  from: string | null;
+  to: string | null;
+  message: string;
+}
+
+/** 一份工具副本。 */
+export interface ToolCopy {
+  path: string;
+  /** 這份是不是「PATH 上第一個」＝實際會被執行的 */
+  active: boolean;
+}
+
+/** 重複安裝診斷（後端 `tools::versions::DuplicateReport`）。 */
+export interface ToolDuplicateReport {
+  app: string;
+  display: string;
+  copies: ToolCopy[];
+  duplicated: boolean;
+}
+
 export interface SwitchRequest {
   app: string;
   /** 佔位值：後端一律覆寫成網關 URL（唯一模式就是經網關）。 */

@@ -9,17 +9,31 @@
 
 use super::*;
 
+mod doctor;
 mod probe;
 mod update;
 mod version_cmp;
 
 // 保持原本 `crate::tools::versions::*` 的取名路徑不變（部分條目僅測試使用，故允許未使用)。
 #[allow(unused_imports)]
+pub(crate) use doctor::*;
+#[allow(unused_imports)]
 pub(crate) use probe::*;
 #[allow(unused_imports)]
 pub(crate) use update::*;
 #[allow(unused_imports)]
 pub(crate) use version_cmp::*;
+
+/// 本 App 管的四個工具（app id, 顯示名）。
+///
+/// 原本 `update.rs` 裡有兩份一模一樣的私有清單（`APPS` 與 `NPM_APPS`），
+/// 2026-10-19 抽到這裡共用 —— 新增工具時只需要改一處。
+pub(crate) const APPS: [(&str, &str); 4] = [
+    ("claude", "Claude Code"),
+    ("codex", "Codex"),
+    ("opencode", "OpenCode"),
+    ("dsh", "DeepSeek Harness"),
+];
 
 /// 本機工具版本 + 一鍵更新資訊（版本頁用；與 10 秒輪詢的 detect 分開，避免頻繁起進程）。
 #[derive(Debug, Clone, Serialize)]

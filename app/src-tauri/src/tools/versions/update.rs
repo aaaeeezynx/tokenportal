@@ -2,6 +2,7 @@
 
 use super::probe::{npm_global_root, npm_pkg_version_at, probe_tool_version};
 use super::version_cmp::{clean_version, cmp_version};
+use super::APPS;
 use super::{
     first_line, npm_package, run_capture_lenient, run_with_timeout, which_bin, ToolLatest,
     ToolVersion,
@@ -45,13 +46,7 @@ pub(crate) fn npm_latest(pkg: &str) -> Option<String> {
 
 
 pub fn tool_versions() -> Vec<ToolVersion> {
-    // 第一階段 A／F：只列「有接管/檢測意義」的工具（hermes 於 F 移除）。
-    const APPS: [(&str, &str); 4] = [
-        ("claude", "Claude Code"),
-        ("codex", "Codex"),
-        ("opencode", "OpenCode"),
-        ("dsh", "DeepSeek Harness"),
-    ];
+    // 工具清單共用 super::APPS（2026-10-19 從兩份私有清單抽出）。
     APPS.iter()
         .map(|(app, display)| {
             let (installed, version) = probe_tool_version(app);
@@ -77,12 +72,13 @@ pub fn tool_versions() -> Vec<ToolVersion> {
 /// 各 npm 包最新版（並行查 registry）。
 /// 前端獨立調用，不擋版本顯示。
 pub fn tool_latest() -> Vec<ToolLatest> {
-    const NPM_APPS: [&str; 4] = ["claude", "codex", "opencode", "dsh"];
+    let npm_apps: Vec<&str> = APPS.iter().map(|(a, _)| *a).collect();
+    let npm_apps = &npm_apps[..];
     // 本機已裝版本（讀 package.json，不起進程；缺失時回退跑 --version）。
     let mut cur: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
     #[cfg(windows)]
     if let Some(root) = npm_global_root() {
-        for app in NPM_APPS {
+        for app in npm_apps {
             if let Some(pkg) = npm_package(app) {
                 if let Some(v) = npm_pkg_version_at(&root, pkg) {
                     cur.insert(app, v);
@@ -90,7 +86,7 @@ pub fn tool_latest() -> Vec<ToolLatest> {
             }
         }
     }
-    for app in NPM_APPS {
+    for app in npm_apps {
         if !cur.contains_key(app) {
             if let (_, Some(v)) = probe_tool_version(app) {
                 cur.insert(app, clean_version(&v).unwrap_or(v));
@@ -99,7 +95,7 @@ pub fn tool_latest() -> Vec<ToolLatest> {
     }
     // 並行問 registry。
     let latest: std::collections::HashMap<&str, Option<String>> = std::thread::scope(|s| {
-        let handles: Vec<(&str, std::thread::ScopedJoinHandle<Option<String>>)> = NPM_APPS
+        let handles: Vec<(&str, std::thread::ScopedJoinHandle<Option<String>>)> = npm_apps
             .iter()
             .map(|app| {
                 let pkg = npm_package(app).expect("npm app");
@@ -111,7 +107,7 @@ pub fn tool_latest() -> Vec<ToolLatest> {
             .map(|(app, h)| (app, h.join().unwrap_or(None)))
             .collect()
     });
-    let out: Vec<ToolLatest> = NPM_APPS
+    let out: Vec<ToolLatest> = npm_apps
         .iter()
         .map(|app| {
             let l = latest.get(app).cloned().flatten();

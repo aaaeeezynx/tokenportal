@@ -33,6 +33,8 @@ import type {
   ToolLatest,
   ToolStatus,
   ToolVersion,
+  ToolUpdateOutcome,
+  ToolDuplicateReport,
   TrendAppRow,
   TrendBucket,
   UsageRange,
@@ -66,6 +68,14 @@ export const platformApi = {
   toolVersions: (): Promise<ToolVersion[]> => invoke("tool_versions"),
   toolLatest: (): Promise<ToolLatest[]> => invoke("tool_latest"),
   toolUpdate: (app: string): Promise<string> => invoke("tool_update", { app }),
+  /** 一鍵安裝（npm 全域）；只給尚未安裝的工具用。 */
+  toolInstall: (app: string): Promise<string> => invoke("tool_install", { app }),
+  /** 全部升級：只處理「已安裝且確實落後」的工具。 */
+  toolUpgradeAll: (): Promise<ToolUpdateOutcome[]> =>
+    invoke("tool_upgrade_all"),
+  /** 重複安裝診斷：同一個工具在不同目錄各有一份。 */
+  toolDuplicates: (): Promise<ToolDuplicateReport[]> =>
+    invoke("tool_duplicates"),
   switchPlan: (req: SwitchRequest, port: number): Promise<SwitchPlan> =>
     invoke("switch_plan", { req, port }),
   switchApply: (req: SwitchRequest, port: number): Promise<SwitchResult> =>

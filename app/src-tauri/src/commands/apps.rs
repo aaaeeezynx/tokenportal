@@ -31,6 +31,32 @@ pub async fn tool_update(app: String) -> Result<String, String> {
         .map_err(|e| e.to_string())?
 }
 
+// ---- 安裝／全部升級／重複安裝診斷（見 tools/versions/doctor.rs）----
+
+/// 一鍵安裝（npm 全域）；只給尚未安裝的工具用。
+#[tauri::command]
+pub async fn tool_install(app: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || tools::tool_install_run(&app))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// 全部升級：只處理「已安裝且確實落後」的工具，逐筆回報結果。
+#[tauri::command]
+pub async fn tool_upgrade_all() -> Vec<tools::UpdateOutcome> {
+    tauri::async_runtime::spawn_blocking(tools::tool_update_all)
+        .await
+        .unwrap_or_default()
+}
+
+/// 重複安裝診斷：同一個工具在不同目錄各有一份時，「跑的那份」可能不是剛更新的那份。
+#[tauri::command]
+pub async fn tool_duplicates() -> Vec<tools::DuplicateReport> {
+    tauri::async_runtime::spawn_blocking(tools::tool_duplicates)
+        .await
+        .unwrap_or_default()
+}
+
 fn normalize_switch_request(
     db: &DbState,
     req: &mut tools::SwitchRequest,

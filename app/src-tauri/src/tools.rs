@@ -57,10 +57,15 @@ pub(crate) use {
     detect::detect_tools,
 
     // ---- versions ----
+    versions::DuplicateReport,
     versions::ToolLatest,
     versions::ToolVersion,
+    versions::UpdateOutcome,
     versions::run_with_timeout,
+    versions::tool_duplicates,
+    versions::tool_install_run,
     versions::tool_latest,
+    versions::tool_update_all,
     versions::tool_update_run,
     versions::tool_versions,
     versions::which_bin,

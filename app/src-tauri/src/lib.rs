@@ -125,6 +125,10 @@ pub fn run() {
             commands::tool_versions,
             commands::tool_latest,
             commands::tool_update,
+            // CLI 工具管理：安裝／全部升級／重複安裝診斷
+            commands::tool_install,
+            commands::tool_upgrade_all,
+            commands::tool_duplicates,
             commands::switch_plan,
             commands::switch_apply,
             commands::switch_restore,

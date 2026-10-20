@@ -989,6 +989,75 @@ cc-switch 的 `coding_plan.rs` 有 **137 KB**、`subscription.rs` 70 KB，
 
 ---
 
+### 0.9.46 CLI 工具管理：安裝／全部升級／重複安裝診斷（2026-10-19）
+
+#### 使用者要求
+
+> 2.CLI 工具管理
+
+#### 既有的是什麼、缺的是什麼
+
+原本只有三個命令：`tool_versions`（查版本）、`tool_latest`（查 registry 最新版）、
+`tool_update`（更新**單一**工具）。缺的三件：
+
+| 缺口 | 後果 |
+|---|---|
+| 沒有安裝 | 沒裝的工具只能叫使用者自己去終端機打 `npm i -g …` |
+| 沒有全部升級 | 四個工具要逐一按 |
+| 沒有重複安裝診斷 | 同一工具兩份時，**跑的那份不一定是剛更新的那份** —— 這是最常見的「更新沒生效」誤判來源 |
+
+#### 新增（`tools/versions/doctor.rs`，358 行）
+
+| 命令 | 行為 |
+|---|---|
+| `tool_install` | `npm i -g <pkg>`；已安裝會拒絕並提示改用「更新」 |
+| `tool_upgrade_all` | 只升級「已安裝 ＋ registry 確認落後」的；查不到最新版（斷網）一律略過 |
+| `tool_duplicates` | 逐工具列出所有副本，標出哪一份是 PATH 上實際會被執行的 |
+
+#### 兩個判定上的坑（都靠實測抓到）
+
+**① 重複的判定單位是「目錄」，不是「檔案」。**
+Windows 上 npm 在**同一個目錄**同時產生 `claude`（Git Bash shim）、
+`claude.cmd`（cmd／PowerShell 真正執行的）、`claude.ps1` —— 那是同一份安裝的
+三個入口。按檔案數判斷會把每個工具都誤報成「有 3 份」。
+
+**② 副檔名優先序。**
+第一版先找無副檔名的，於是診斷回報 `...\npm\claude` —— 那在 Windows 上
+**根本不能執行**。實機驗證（CDP）一跑就看到 `active` 是那個 shim，
+改成先找 `.exe/.cmd/.bat/.ps1`、無副檔名的排最後，`active` 也改成
+**比對所在目錄**（因為 `which_bin` 與 `find_all_bins_in` 各自挑到不同的入口）。
+
+#### 順手清掉的重複
+
+`update.rs` 原本有兩份一模一樣的私有工具清單（`APPS` 與 `NPM_APPS`）。
+抽成 `versions::APPS` 共用，新增工具時只改一處。
+
+#### 實機驗證（CDP 走真實 IPC）
+
+| 驗證項 | 結果 |
+|---|---|
+| 重複診斷 | ✅ 四個工具各 1 份，`active` 正確指向 `...\npm\claude.cmd`（修正前是無副檔名的 shim） |
+| 安裝拒絕（已安裝） | ✅ `claude 已經安裝，請用「更新」而不是「安裝」` |
+| 安裝拒絕（未知工具） | ✅ `未知工具：nope` |
+| **全部升級（真的跑）** | ✅ **四個工具全部升級成功**：claude 2.1.281→**2.1.304**、codex 0.153.4→**0.163.0**、opencode 1.18.29→**1.19.3**、dsh 0.1.5-rc.3→**0.2.1-rc.2** |
+| 升級後狀態 | ✅ 四個都是 `up_to_date: true`、`wouldUpdate: false` |
+| **已最新時再跑一次** | ✅ 四個都回 `ran: false`／`已是最新（x），略過`，**6 秒**結束（沒有再跑 npm） |
+
+> 使用者明確同意後才執行真實升級（第一次詢問時先列出「會升哪四個、從哪到哪」）。
+> 升級完成後 `tool_latest` 與 `tool_versions` 兩邊一致。
+
+#### 閘門
+
+| 項目 | 結果 |
+|---|---|
+| `cargo test --offline --lib` | **442 passed / 0 failed / 17 ignored** ✅（+6 個 doctor 測試） |
+| `cargo clippy --offline --all-targets` | **0 warning** ✅ |
+| `pnpm exec tsc --noEmit` | exit 0 ✅ |
+| `pnpm exec tauri build` | exit 0 ✅ |
+| 行數 | `doctor.rs` 358、`update.rs` 145、`ToolVersions.tsx` 249（皆 ≤400）✅ |
+
+---
+
 ### 0.9.41 品牌更名：Token Gateway → Token Toll（2026-10-04）
 
 #### 使用者要求
