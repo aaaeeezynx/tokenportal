@@ -1,3 +1,4 @@
+mod claude_desktop;
 mod commands;
 pub mod error;
 mod autostart;
@@ -129,6 +130,10 @@ pub fn run() {
             commands::tool_install,
             commands::tool_upgrade_all,
             commands::tool_duplicates,
+            // Claude Desktop 接管（見 claude_desktop.rs）
+            commands::desktop_status,
+            commands::desktop_apply,
+            commands::desktop_restore,
             commands::switch_plan,
             commands::switch_apply,
             commands::switch_restore,

@@ -1058,6 +1058,102 @@ Windows 上 npm 在**同一個目錄**同時產生 `claude`（Git Bash shim）�
 
 ---
 
+### 0.9.47 Claude Desktop 支援：Claude 形狀別名 ＋ 與 CC Switch 共存（2026-10-20）
+
+#### 使用者要求
+
+> 4.Claude Desktop 支援（含模型對映）
+> （追加）連別名自動建立也做；與 cc-switch 共存：各寫一份，用 _meta 切換
+
+#### 先查清楚「別名路由通不通」才動手
+
+Claude Desktop 不是填個 `base_url` 就能用。查核結果三條：
+
+| # | 發現 | 依據 |
+|---|---|---|
+| 1 | `provider_models` 就是映射表（`display_name` ↔ `actual_model`） | `db/schema.rs` |
+| 2 | **轉發時真的會改寫**：`models::resolve_actual` 把顯示名換成 actual | `models/crud.rs:212`、`forward.rs:257` |
+| 3 | 入站格式是**路徑後綴**判定（`ends_with("/messages")`），裸的 `127.0.0.1:15722` 就命中 | `proxy/matrix.rs:58` |
+
+所以**不需要**像 CC Switch 那樣另掛 `/claude-desktop` 前綴。
+
+#### 真正的硬限制：fail-all validator
+
+Desktop 的 `inferenceModels` 裡只要出現**不像 Claude 的模型 ID**，
+**整組 profile 會被拒收**（一個都不剩）。白名單是
+`claude-{sonnet,opus,haiku,fable}-*`（1.12603.1+ 納入 fable）。
+
+實測使用者的機器上 CC Switch 已經寫過一份，形狀正好印證：
+
+```json
+{ "name": "claude-fable-5", "labelOverride": "deepseek-v4-flash", "supports1m": true }
+```
+
+`name` 是給 Desktop 看的（白名單），`labelOverride` 才是給人看的真名。
+
+所以本專案的做法是**兩段式映射**：
+
+```text
+Desktop 送 claude-sonnet-5
+  → provider_models.display_name = "claude-sonnet-5"（自動建立）
+  → provider_models.actual_model = "deepseek-v4.1-flash"
+  → resolve_actual() 在轉發前改寫 → 上游收到真模型名
+```
+
+#### 與 CC Switch 共存（實測這台機器上它已經寫了一份）
+
+`configLibrary/` 可以放多份 profile，`_meta.json` 的 `appliedId` 決定哪份生效。
+
+| 檔案 | 誰的 | 本模組怎麼處理 |
+|---|---|---|
+| `…157210.json`（尾碼＝CC Switch 的埠 15721） | CC Switch | **完全不碰** |
+| `…157220.json`（尾碼＝本專案的埠 15722） | Token Portal | 只建／刪這一份 |
+| `_meta.json` | 共用 | 只改 `appliedId` 與自己那條 `entries`；其他條目原樣保留 |
+
+還原時 `appliedId` 指回剩下的第一條（通常就是 CC Switch）。
+
+#### 四個別名的預設指向
+
+`claude-sonnet-5`／`claude-opus-5`／`claude-haiku-4-5`／`claude-fable-5`
+**全部指向「第一個啟用來源的第一個啟用模型」**（實測是 `deepseek-v4.1-flash`）。
+
+理由：可預測。依定價自動分派（opus→最貴、haiku→最便宜）看起來聰明，
+但定價沒填好時會分派到奇怪的組合，而使用者根本不知道發生什麼事。
+之後可在模型面板逐筆改成不同模型 —— 已存在的別名**不會被覆寫**。
+
+#### 實機驗證（CDP 走真實 IPC，對真實的 `%LOCALAPPDATA%\Claude-3p\configLibrary`）
+
+| 步驟 | 結果 |
+|---|---|
+| 初始狀態 | ✅ `installed: true`、`configured: false`、四個別名都「還沒建立」、提示「按套用會自動補」 |
+| 套用 | ✅ 新建立 4 個對映（全部 → `deepseek-v4.1-flash`）、寫入 profile、`appliedId → …157220` |
+| 套用後狀態 | ✅ `configured: true`、「已就緒：Desktop 會看到 4 個 Claude 模型」 |
+| 還原 | ✅ 刪除自己的 profile、`appliedId → …157210`（指回 CC Switch） |
+| 還原後檔案 | ✅ 只剩 CC Switch 那份（786 bytes，**完好**）＋ `_meta.json`（168 bytes） |
+
+> 動刀前已把 `configLibrary` 的兩個 json 備份到 `.ccswitch-ref/desktop-backup/`。
+> 還原後逐一比對：CC Switch 的 profile 一個字都沒動，`_meta.json` 只剩它的條目。
+
+#### 兩個刻意的設計
+
+1. **不改別人的 profile**：CC Switch 那份原封不動 —— 使用者的模型映射不會被蓋掉，
+   兩邊可以隨時切回去。
+2. **不刪已建立的別名**：還原只刪 profile 與 meta 條目，`provider_models` 裡的
+   四個別名留著。它們是有效的模型對映，刪掉反而會讓已設定的東西消失；
+   CC Switch 也是同樣的做法。
+
+#### 閘門
+
+| 項目 | 結果 |
+|---|---|
+| `cargo test --offline --lib` | **450 passed / 0 failed / 17 ignored** ✅（+8 個 desktop 測試） |
+| `cargo clippy --offline --all-targets` | **0 warning** ✅ |
+| `pnpm exec tsc --noEmit` | exit 0 ✅ |
+| `pnpm exec tauri build` | exit 0 ✅ |
+| 行數 | `claude_desktop/mod.rs` 312、`meta.rs` 180、`ClaudeDesktopSection.tsx` 142 ✅ |
+
+---
+
 ### 0.9.41 品牌更名：Token Gateway → Token Toll（2026-10-04）
 
 #### 使用者要求

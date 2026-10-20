@@ -139,6 +139,29 @@ export const DICT: Record<string, [string, string]> = {
   ],
   "settings.utilities.failed": ["讀取小工具狀態失敗：{e}", "Failed to read utilities: {e}"],
 
+  // ── 設定：Claude Desktop ──
+  "settings.desktop.title": ["Claude Desktop", "Claude Desktop"],
+  "settings.desktop.caption": [
+    "用 Claude 形狀的別名把 Desktop 接到本網關（Desktop 會拒收非 Claude 的模型 ID）",
+    "Connect Desktop to this gateway via Claude-shaped aliases (Desktop rejects non-Claude model IDs)",
+  ],
+  "settings.desktop.state": ["狀態", "Status"],
+  "settings.desktop.apply": ["套用", "Apply"],
+  "settings.desktop.restore": ["還原", "Restore"],
+  "settings.desktop.gateway": ["網關位址", "Gateway URL"],
+  "settings.desktop.key": ["使用的金鑰", "Key"],
+  "settings.desktop.noKey": ["沒有可用的本地 Key", "No usable local key"],
+  "settings.desktop.aliases": ["模型對映（Desktop 送別名，網關改寫成真模型）", "Model mapping (Desktop sends the alias; the gateway rewrites it)"],
+  "settings.desktop.noAlias": ["尚未建立（按「套用」會自動補）", "not created yet (Apply creates it)"],
+  "settings.desktop.notInstalled": [
+    "找不到 Claude Desktop 的 configLibrary —— 本機可能沒安裝",
+    "Claude Desktop's configLibrary not found - it may not be installed",
+  ],
+  "settings.desktop.hint": [
+    "會另寫一份自己的 profile（不覆蓋其他工具寫的），只改 _meta.json 的 appliedId；還原時指回原本那份。改完請完全結束並重新開啟 Claude Desktop。",
+    "Writes its own profile (never overwriting others) and only changes _meta.json's appliedId; Restore points back to the previous one. Fully quit and reopen Claude Desktop afterwards.",
+  ],
+
   // ── 設定：關於 ──
   "settings.about.title": ["關於", "About"],
   "settings.about.caption": [

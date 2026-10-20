@@ -175,3 +175,53 @@ pub fn switch_off(
 pub fn codex_doctor(port: u16) -> Vec<String> {
     tools::codex_doctor(port)
 }
+
+// ---- Claude Desktop 接管（見 claude_desktop.rs）----
+//
+// 這三個都要碰 DB，而 `State` 不能跨執行緒；沿用 `catalog_fetch` 的寫法：
+// 在 `spawn_blocking` 裡用 `AppHandle` 重新取 state。
+
+/// 讀 Claude Desktop 接管狀態（不寫任何檔案）。
+#[tauri::command]
+pub async fn desktop_status(
+    app: AppHandle,
+    port: u16,
+) -> Result<crate::claude_desktop::DesktopStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db = app.state::<DbState>();
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        Ok(crate::claude_desktop::status(&conn, port))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 套用：建立缺少的 Claude 別名 → 寫自己的 profile → appliedId 指向自己。
+#[tauri::command]
+pub async fn desktop_apply(
+    app: AppHandle,
+    port: u16,
+) -> Result<(crate::claude_desktop::DesktopStatus, String), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db = app.state::<DbState>();
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        crate::claude_desktop::apply(&conn, port)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 還原：刪自己的 profile、從 `_meta.json` 移除、appliedId 指回其他條目。
+#[tauri::command]
+pub async fn desktop_restore(
+    app: AppHandle,
+    port: u16,
+) -> Result<(crate::claude_desktop::DesktopStatus, String), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db = app.state::<DbState>();
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        crate::claude_desktop::restore(&conn, port)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

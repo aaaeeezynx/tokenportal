@@ -15,6 +15,7 @@ import { SectionHead } from "./settings/SectionHead";
 import { useI18n } from "../lib/i18n";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { UtilitiesSection } from "./settings/UtilitiesSection";
+import { ClaudeDesktopSection } from "./settings/ClaudeDesktopSection";
 
 function copyText(t: string) {
   void navigator.clipboard?.writeText(t);
@@ -151,6 +152,9 @@ export default function SettingsPage() {
 
       {/* ── 內建小工具（對標 CC Switch 的 built-in utilities） ── */}
       <UtilitiesSection />
+
+      {/* ── Claude Desktop 接管 ── */}
+      <ClaudeDesktopSection />
 
       {/* ── 用量匯出 ── */}
       <div className="glass p-5">

@@ -5,6 +5,7 @@
  * 對外仍是同一個 `api` 物件，既有 `api.providerList()` 這種寫法完全不用改。
  */
 import { useQuery } from "@tanstack/react-query";
+import { claudeDesktopApi } from "./api/claudeDesktop";
 import { coreApi } from "./api/core";
 import { panelsApi } from "./api/panels";
 import { platformApi } from "./api/platform";
@@ -16,6 +17,7 @@ export const api = {
   ...panelsApi,
   ...platformApi,
   ...utilitiesApi,
+  ...claudeDesktopApi,
 };
 
 export * from "./apiTypes";
