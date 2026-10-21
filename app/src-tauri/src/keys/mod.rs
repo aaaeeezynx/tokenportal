@@ -309,7 +309,9 @@ pub(crate) fn auth_key(conn: &Connection, secret: &str) -> Result<AuthedKey, (u1
 }
 
 /// 直連上游鑑權：Bearer 即某啟用渠道自身的上游 api_key（非空、精確匹配）時，
-/// 視為該渠道的直連請求，不經本地 Key 轉發、僅允許該渠道；
+/// 視為該渠道的直連請求，不經本地 Key 轉發。同一把 Key 掛在多個來源時先按
+/// priority/id 取第一個；若請求模型只登記在同 Key 的另一個來源，
+/// `resolve_model` 會再切換（仍只使用這把 Key）。
 /// 用量照常記入 request_logs（tokens/cost/provider 歸因，僅不計本地 Key 配額）。
 /// 本地 Key 優先：先走 [`auth_key`]，401 才回退到此。
 pub(crate) fn auth_direct(conn: &Connection, secret: &str) -> Result<AuthedKey, (u16, crate::error::CmdError)> {
@@ -318,7 +320,8 @@ pub(crate) fn auth_direct(conn: &Connection, secret: &str) -> Result<AuthedKey, 
     }
     let row: rusqlite::Result<(i64, String, String, String, String, String)> = conn.query_row(
         "SELECT id, base_url, api_key, auth_scheme, api_format, protocol_prefixes FROM providers
-         WHERE enabled = 1 AND api_key IS NOT NULL AND api_key <> '' AND api_key = ?1",
+         WHERE enabled = 1 AND api_key IS NOT NULL AND api_key <> '' AND api_key = ?1
+         ORDER BY priority ASC, id ASC LIMIT 1",
         [secret],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
     );

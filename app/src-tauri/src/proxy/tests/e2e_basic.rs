@@ -21,3 +21,5 @@
     mod routing;
     #[path = "e2e_basic/passthrough.rs"]
     mod passthrough;
+    #[path = "e2e_basic/routing_direct.rs"]
+    mod routing_direct;

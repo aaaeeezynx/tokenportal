@@ -21,6 +21,10 @@ fn catalog_url(base: &str, api_format: &str) -> String {
         format!("{b}/v1beta/models")
     } else if api_format == "anthropic" {
         format!("{b}/v1/models")
+    } else if b.ends_with("/inference/go") {
+        // OpenCode Go 的文件 base 是 `/inference/go`，模型清單在
+        // `/inference/go/v1/models`；直接拼 `/models` 會 404（2026-10-21 實測）。
+        format!("{b}/v1/models")
     } else {
         format!("{b}/models")
     }
@@ -199,4 +203,37 @@ pub(crate) fn catalog_fetch(
     let cfg = catalog_read_cfg(conn, provider_id, api_key_override, base_url_override)?;
     let ids = catalog_fetch_http(&cfg)?;
     catalog_write(conn, provider_id, ids)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::catalog_url;
+
+    #[test]
+    fn opencode_go_catalog_uses_v1_models() {
+        assert_eq!(
+            catalog_url("https://opencode.ai/inference/go", "auto"),
+            "https://opencode.ai/inference/go/v1/models"
+        );
+        assert_eq!(
+            catalog_url("https://opencode.ai/inference/go/", "openai-chat"),
+            "https://opencode.ai/inference/go/v1/models"
+        );
+    }
+
+    #[test]
+    fn catalog_url_keeps_other_layouts() {
+        assert_eq!(
+            catalog_url("https://opencode.ai/zen/v1", "auto"),
+            "https://opencode.ai/zen/v1/models"
+        );
+        assert_eq!(
+            catalog_url("https://api.openai.com/v1", "openai-chat"),
+            "https://api.openai.com/v1/models"
+        );
+        assert_eq!(
+            catalog_url("https://api.anthropic.com", "anthropic"),
+            "https://api.anthropic.com/v1/models"
+        );
+    }
 }

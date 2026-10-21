@@ -172,7 +172,24 @@ pub(super) fn resolve_model(
         return Ok(());
     }
     if authed.direct {
-        let pname = provider_name(conn, authed.provider_id);
+        // 同一個上游 Key 可能掛在多個來源（例如 Go 與 Zen 共用一把 Key）。
+        // 綁定來源沒有這個模型時，只在同 Key 的來源中找登記它的來源；
+        // 找到就切換，找不到才拒絕。絕不路由到別把 Key 的來源。
+        if let Some(p) = resolve_model_provider_by_key(conn, model_raw, &authed.provider_api_key) {
+            authed.provider_id = p.id;
+            authed.provider_base_url = p.base_url;
+            authed.provider_api_key = p.api_key;
+            authed.provider_auth_scheme = p.scheme;
+            authed.provider_api_format = p.format;
+            authed.provider_protocol_prefixes = p.prefixes;
+            return Ok(());
+        }
+        let names = same_key_provider_names(conn, &authed.provider_api_key);
+        let names = if names.is_empty() {
+            provider_name(conn, authed.provider_id)
+        } else {
+            names.join("、")
+        };
         return Err(Box::new(reject(
             ctx,
             started,
@@ -180,7 +197,7 @@ pub(super) fn resolve_model(
             model_raw,
             StatusCode::BAD_REQUEST,
             format!(
-                "直連模式僅允許來源「{pname}」登記的模型，{model_raw} 不在其清單內，請求不會轉發"
+                "直連模式僅允許同一上游 Key 的來源登記的模型；{model_raw} 不在任何已登記此 Key 的來源清單內（{names}），請求不會轉發"
             ),
         )));
     }

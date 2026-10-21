@@ -46,6 +46,25 @@ fn direct_matches_provider_key() {
 }
 
 #[test]
+fn direct_prefers_priority_when_key_is_shared() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = crate::db::open_and_ensure(&dir.path().join("t.db")).unwrap();
+    conn.execute(
+        "INSERT INTO providers (name, app_type, api_format, base_url, api_key, auth_scheme,
+         models_json, priority, enabled, created_at, updated_at)
+         VALUES ('low','universal','openai-chat','http://low','shared','bearer','[]',9,1,0,0),
+                ('high','universal','openai-chat','http://high','shared','bearer','[]',0,1,0,0)",
+        [],
+    )
+    .unwrap();
+    let a = auth_direct(&conn, "shared").unwrap();
+    assert_eq!(
+        a.provider_base_url, "http://high",
+        "同 Key 多來源應按 priority 取第一個"
+    );
+}
+
+#[test]
 fn rotate_replaces_secret() {        let dir = tempfile::tempdir().unwrap();
     let conn = crate::db::open_and_ensure(&dir.path().join("t.db")).unwrap();
     let created = create_key(&conn, &test_input()).unwrap();

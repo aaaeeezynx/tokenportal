@@ -75,7 +75,10 @@ use {
         strip_for_upstream, strip_leading_version, translate_forward_body, BodyPrep, ForwardBody,
         ReroutedProvider, TransSpec,
     },
-    forward_route::{provider_name, resolve_model_provider, resolve_model_providers},
+    forward_route::{
+        provider_name, resolve_model_provider, resolve_model_provider_by_key,
+        resolve_model_providers, same_key_provider_names,
+    },
     failover::{learn_format, learned_format, plan_attempts, Attempt},
     health::order_by_health,
     logging::{err_json, extract_usage, insert_log, log_reject, reject, SseAcc},
@@ -231,7 +234,12 @@ async fn proxy_handler(State(ctx): State<ProxyCtx>, req: axum::http::Request<Bod
     // 只在 /chat/completions），所以同一來源也要換協議重試；其他登記了同一個模型
     // 的來源一併排進佇列，當前來源連不上或 5xx 時可以換手。見 `failover.rs`。
     let in_fmt = InFmt::from_path(&path_hint);
-    let others = resolve_model_providers(&conn, &model_raw, authed.provider_id);
+    let mut others = resolve_model_providers(&conn, &model_raw, authed.provider_id);
+    if authed.direct {
+        // 直連請求只帶了客戶端那一把上游 Key；failover 也只能換到共用
+        // 同一把 Key 的來源，否則等於拿別人的憑證發請求。
+        others.retain(|p| p.api_key == authed.provider_api_key);
+    }
     // 逐模型協議（空 = 未偵測）。這是「一個來源服務多種協議」的關鍵 ——
     // 訂閱制的 opencode-go 單一 base_url 底下 Claude 走 /messages、其餘走 chat。
     let bound_protocol = crate::models::model_protocol(&conn, authed.provider_id, &model_raw);
