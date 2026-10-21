@@ -375,7 +375,27 @@ Token.Portal_0.1.4_x64-setup.exe      ← NSIS，推薦
 Token.Portal_0.1.4_x64_en-US.msi      ← MSI
 ```
 
-取得憑證（git 已存有，**不要把 token 印出來或寫進檔案**）：
+**先決條件：這台裝置必須先完成 GitHub 認證。** 新裝置預設沒有。
+
+憑證存在作業系統的憑證管理器，而 `credential.helper` 是**機器專屬路徑**（在原作者
+的機器上指向她自己的 Git 安裝，新裝置不會有）。所以要先設定身分與認證：
+
+```powershell
+git config --global user.name  "aaaeeezynx"
+git config --global user.email "aaaeeezynx@users.noreply.github.com"
+
+# 認證二選一：
+#   a) 安裝 Git Credential Manager，首次 push 時以瀏覽器登入
+#   b) 建 Personal Access Token（需 repo 權限），當作密碼使用
+```
+
+驗證認證可用（應正常列出 ref，而不是 404 或要求輸入密碼）：
+
+```powershell
+git ls-remote origin HEAD
+```
+
+確認可用之後，才取用憑證（**不要把 token 印出來或寫進檔案**）：
 
 ```powershell
 $cred = "protocol=https`nhost=github.com`n`n" | git credential fill

@@ -1,0 +1,6 @@
+# [evidence] 本檔為 2026-09-26 的原始除錯輸出。
+# 僅將使用者名稱去識別化（改為 <user>），其餘一字未改。
+Token Gateway proxy listening on 127.0.0.1:15722
+DB: C:\Users\<user>\AppData\Roaming\com.tokencounter.gateway\app.db
+GW-DBG: bytes_len=107 body_json_is_some=false in_fmt=anthropic bytes_head={model:claude-opus-5,max_tokens:32,messages:[{role:user,content:What is 2+2? Reply only with the number.}]}
+GW-DBG: translated but fwd_value=None! bytes_preview={model:claude-opus-5,max_tokens:32,messages:[{role:user,content:What is 2+2? Reply only with the number.}]}
